@@ -288,7 +288,8 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
   <div class="gate-inner">
     <div class="gate-head">
       <div class="wordmark">OVERTIME<span>.EXE</span></div>
-      <p>Municipal labour registry · Form 12-B<br>Employment access terminal</p>
+      <p>Municipal labour registry · Form 12-B<br>Employment access terminal<br>
+        <span id="buildStamp">build —</span></p>
     </div>
     <div class="panel">
       <div id="storageWarn" hidden class="warnbar"></div>
@@ -532,6 +533,30 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
 
 <script src="api.js"></script>
 <script>
+/* ----------------------------------------------------------
+   Build stamp and staleness guard.
+
+   A cached index.html from an earlier build is indistinguishable
+   from a broken login unless the page says which build it is: the
+   old one stored accounts in localStorage and never called the
+   server, so "that name is already on file" and "I cannot sign in"
+   are both true at once and neither points at the cause.
+   ---------------------------------------------------------- */
+const BUILD = '1.0 · server-authoritative';
+document.getElementById('buildStamp').textContent = 'build ' + BUILD;
+console.info('%cOVERTIME.EXE ' + BUILD, 'color:#34D9F0;font-weight:bold');
+
+if (!window.API) {
+  const warn = document.getElementById('storageWarn');
+  warn.hidden = false;
+  warn.textContent =
+    'api.js did not load, so this page cannot reach the registry. You are viewing a '
+    + 'cached or stale copy. Hard-reload with Ctrl+Shift+R (Cmd+Shift+R on macOS) and '
+    + 'open it from http://localhost:8080 — not from a file:// path.';
+  document.getElementById('authSubmit').disabled = true;
+  throw new Error('api.js missing — stale page');
+}
+
 /* ==========================================================
    Client runtime. This mirrors src/ closely enough to play
    with; the TypeScript modules are the real implementation.
