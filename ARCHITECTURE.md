@@ -273,6 +273,56 @@ scrolls rather than moves. No storage APIs are used in the prototype — session
 
 ---
 
+## 8b. Access flow
+
+Three screens, routed on boot by what the account actually contains, so a
+half-finished intake resumes at the intake form instead of dropping someone into
+an empty dashboard.
+
+```
+boot ──▶ session key in storage?
+          │no                        │yes
+          ▼                          ▼
+    ┌───────────┐            account.character?
+    │ 00 ACCESS │             │null        │set
+    │ sign in / │             ▼            ▼
+    │ register  │──────▶ ┌──────────┐  ┌───────────┐
+    └───────────┘        │ 00b      │──▶│ 01        │
+          ▲              │ INTAKE   │   │ DASHBOARD │
+          └── log out ───┴──────────┴───┴───────────┘
+```
+
+**Storage.** `overtime.accounts.v1` holds `{ [usernameLower]: Account }`;
+`overtime.session.v1` holds the key of the signed-in account. The character save
+is nested inside its account, so one device supports several operators without a
+second keyspace. Writes are debounced 400ms off `render()` plus a flush on
+`beforeunload`.
+
+`localStorage` throws in sandboxed frames and in Safari private mode, so it is
+probed once at boot and swapped for an in-memory map on failure. The game never
+notices; only the warning banner on the sign-in panel does. `AccountStore` in
+`src/state/accounts.ts` is the typed version of the same model and is the seam
+for a real server: swap its four methods for API calls and nothing else changes.
+
+**Credentials.** Passwords are salted and SHA-256 hashed via Web Crypto, with an
+FNV-1a fallback for insecure contexts, tagged `fnv1a$` so a later migration can
+find and rehash them. This is obfuscation, not security — it stops a reused
+password sitting in plain text in devtools, and that is the entire claim. Real
+accounts need a server; the client cannot be the authority on its own identity.
+
+**Intake.** Name, gender, and one of three factions. Selecting a faction updates
+a live preview showing its base attributes, starting HP/attack/dodge/crit/
+initiative/charge rate, the health and damage role multipliers, and the ultimate.
+Gender is cosmetic: it drives the personnel-file avatar and nothing in combat
+ever reads it. The faction is permanent, which the form says out loud, because
+finding that out afterwards is how a player ends up with a character they resent.
+
+**User bar.** The masthead carries an ID-badge cluster — SVG avatar tinted by
+faction, character name, faction tag, log out — reading as a laminated pass
+clipped to a form.
+
+---
+
 ## 9. Balance methodology
 
 `tools/simulate.ts` auto-plays all three classes for N in-game days: it allocates points,

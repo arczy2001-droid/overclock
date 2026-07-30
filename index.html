@@ -190,6 +190,80 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--heat-tint);padding:9px 16px;font-size:12.5px;z-index:50;max-width:calc(100vw - 32px);opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.show{opacity:1}
 
+
+/* --- screens: gate → creation → dashboard ------------------ */
+.screen{display:none}
+.screen.active{display:block}
+.gate{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:26px 16px}
+.gate-inner{width:100%}
+#screen-auth .gate-inner{max-width:428px}
+#screen-create .gate-inner{max-width:1080px}
+.gate-head{margin-bottom:16px}
+.gate-head .wordmark{font-size:38px}
+.gate-head p{margin:6px 0 0;font-size:11px;letter-spacing:.2em;color:var(--faint);text-transform:uppercase;line-height:1.6}
+
+/* --- forms -------------------------------------------------- */
+.seg{display:flex;border:1px solid var(--rule);margin-bottom:16px}
+.seg button{flex:1;padding:10px;font-family:var(--display);font-weight:700;font-size:14px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--dim);border-right:1px solid var(--rule)}
+.seg button:last-child{border-right:none}
+.seg button[aria-pressed="true"]{background:var(--panel-2);color:var(--ink);box-shadow:inset 0 -2px 0 var(--cyan)}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:9.5px;letter-spacing:.2em;color:var(--dim);
+  text-transform:uppercase;margin-bottom:5px}
+.field input{width:100%;background:#080B10;border:1px solid var(--rule);color:var(--ink);
+  font:inherit;padding:10px 11px;letter-spacing:.02em}
+.field input:focus{outline:none;border-color:var(--cyan)}
+.field input::placeholder{color:var(--faint)}
+.submit{width:100%;padding:13px;background:var(--cyan);color:var(--void);font-family:var(--display);
+  font-weight:900;font-size:16px;letter-spacing:.12em;text-transform:uppercase;margin-top:4px}
+.submit:hover:not(:disabled){filter:brightness(1.14)}
+.submit:disabled{background:var(--rule);color:var(--faint);cursor:not-allowed}
+.formnote{font-size:11.5px;color:var(--dim);margin:10px 0 0;line-height:1.6}
+.formerr{font-size:12px;color:var(--magenta);margin:10px 0 0;min-height:1.2em;line-height:1.5}
+.warnbar{border:1px solid var(--amber);border-left-width:3px;background:rgba(245,166,35,.06);
+  padding:8px 11px;font-size:11.5px;color:var(--ink);margin-bottom:14px;line-height:1.55}
+
+/* --- gender + class pickers --------------------------------- */
+.pick2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pick{border:1px solid var(--rule);background:var(--panel);padding:10px;text-align:center;
+  display:flex;flex-direction:column;align-items:center;gap:7px}
+.pick:hover{border-color:var(--dim)}
+.pick[aria-pressed="true"]{border-color:var(--cyan);background:var(--panel-2)}
+.pick span{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.pick[aria-pressed="true"] span{color:var(--ink)}
+.classpick{display:flex;flex-direction:column;gap:8px}
+.classcard{border:1px solid var(--rule);border-left-width:3px;background:var(--panel);
+  padding:11px 12px;text-align:left;display:grid;grid-template-columns:auto 1fr;gap:11px;align-items:center}
+.classcard:hover{background:var(--panel-2)}
+.classcard[aria-pressed="true"]{background:var(--panel-2);border-color:var(--rule)}
+.classcard b{display:block;font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:.04em}
+.classcard small{display:block;font-size:11px;color:var(--dim);margin-top:1px}
+.previewbox{border:1px solid var(--rule);background:var(--panel-2);padding:14px;height:100%}
+.previewbox .ult{border-left:2px solid var(--magenta);padding-left:10px;margin-top:12px}
+.previewbox .ult b{display:block;font-family:var(--display);font-weight:700;font-size:15px;
+  letter-spacing:.04em;color:var(--magenta)}
+.previewbox .ult small{color:var(--dim);font-size:12px;line-height:1.6;display:block;margin-top:3px}
+.statrow{display:grid;grid-template-columns:1fr auto;gap:1px 10px;font-size:12.5px;padding:3px 0;
+  border-bottom:1px dashed var(--rule)}
+.statrow:last-of-type{border-bottom:none}
+.statrow em{font-style:normal;color:var(--dim);font-size:10px;letter-spacing:.14em;text-transform:uppercase}
+.statrow b{text-align:right;font-family:var(--display);font-weight:700;font-size:16px}
+
+/* --- ID badge + user bar ------------------------------------ */
+.idbadge{display:flex;align-items:center;gap:9px}
+.idphoto{width:42px;height:42px;border:1px solid var(--rule);background:#080B10;flex:0 0 42px;
+  position:relative;overflow:hidden}
+.idphoto::after{content:'';position:absolute;top:0;right:0;border-width:0 9px 9px 0;
+  border-style:solid;border-color:transparent var(--rule) transparent transparent}
+.idphoto svg{display:block;width:100%;height:100%}
+.idbadge b{display:block;font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:.03em}
+.classtag{display:inline-block;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+  border:1px solid currentColor;padding:1px 6px;margin-top:3px}
+.logout{margin-left:auto;border:1px solid var(--rule);padding:6px 12px;font-size:10.5px;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--dim);align-self:center}
+.logout:hover{color:var(--magenta);border-color:var(--magenta)}
+
 /* --- responsive -------------------------------------------- */
 @media (max-width:880px){
   .shell{grid-template-columns:1fr}
@@ -202,11 +276,87 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
   .vent{width:auto;flex:0 0 96px}
   .thermal .meta{flex:0 0 84px}
   .shifts{grid-template-columns:1fr}
+  .creategrid{grid-template-columns:1fr!important}
+  .gate-head .wordmark{font-size:30px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
+<!-- ================= 00 · ACCESS ================= -->
+<main class="screen gate active" id="screen-auth">
+  <div class="gate-inner">
+    <div class="gate-head">
+      <div class="wordmark">OVERTIME<span>.EXE</span></div>
+      <p>Municipal labour registry · Form 12-B<br>Employment access terminal</p>
+    </div>
+    <div class="panel">
+      <div id="storageWarn" hidden class="warnbar"></div>
+      <div class="seg">
+        <button data-ui="mode" data-mode="login" aria-pressed="true">Sign in</button>
+        <button data-ui="mode" data-mode="register" aria-pressed="false">Register</button>
+      </div>
+      <div class="field">
+        <label for="authUser">Registered name</label>
+        <input id="authUser" autocomplete="username" maxlength="24" placeholder="operator handle">
+      </div>
+      <div class="field">
+        <label for="authPass">Access code</label>
+        <input id="authPass" type="password" autocomplete="current-password" placeholder="minimum 6 characters">
+      </div>
+      <div class="field" id="confirmField" hidden>
+        <label for="authPass2">Confirm access code</label>
+        <input id="authPass2" type="password" autocomplete="new-password" placeholder="type it again">
+      </div>
+      <button class="submit" id="authSubmit">Sign in</button>
+      <p class="formerr" id="authErr"></p>
+      <p class="formnote" id="authNote"></p>
+    </div>
+  </div>
+</main>
+
+<!-- ================= 00b · INTAKE ================= -->
+<main class="screen gate" id="screen-create">
+  <div class="gate-inner">
+    <div class="gate-head">
+      <div class="wordmark">INTAKE<span> FORM</span></div>
+      <p>Section 0 · New operator registration<br>All fields are mandatory and non-binding on the employer</p>
+    </div>
+    <div class="panel">
+      <div class="grid2 creategrid">
+        <div>
+          <div class="card" style="margin-bottom:12px">
+            <span class="clause">§0.1</span>
+            <h3>Identity</h3>
+            <div class="field">
+              <label for="charName">Character name</label>
+              <input id="charName" maxlength="18" placeholder="the name on the paperwork">
+            </div>
+            <label style="display:block;font-size:9.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-bottom:5px">Photograph on file</label>
+            <div class="pick2">
+              <button class="pick" data-ui="gender" data-gender="male" aria-pressed="true"><span>Male</span></button>
+              <button class="pick" data-ui="gender" data-gender="female" aria-pressed="false"><span>Female</span></button>
+            </div>
+          </div>
+          <div class="card">
+            <span class="clause">§0.2</span>
+            <h3>Assigned faction</h3>
+            <div class="classpick" id="classPick"></div>
+          </div>
+        </div>
+        <div>
+          <div class="previewbox" id="classPreview"></div>
+          <button class="submit" id="startGame" style="margin-top:12px">Start game</button>
+          <p class="formerr" id="createErr"></p>
+          <p class="formnote">Attributes can be reassigned later with credits. The faction cannot.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ================= 01 · DASHBOARD ================= -->
+<div class="screen" id="screen-game">
 <div class="shell">
   <div class="main">
     <header class="masthead">
@@ -218,7 +368,10 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
         </div>
       </div>
       <div class="opstrip">
-        <div class="readout"><b id="opName">—</b><small id="opClass">unassigned</small></div>
+        <div class="idbadge">
+          <div class="idphoto" id="opAvatar"></div>
+          <div><b id="opName">—</b><span class="classtag" id="opClass">—</span></div>
+        </div>
         <div class="readout xpwrap">
           <b id="opLevel">LV 1</b>
           <small id="opXp">0 / 0 XP</small>
@@ -226,6 +379,7 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
         </div>
         <div class="readout credits"><b id="wCredits">0</b><small>Kredyty · credits</small></div>
         <div class="readout procs"><b id="wProcs">0</b><small>Procesory · processors</small></div>
+        <button class="logout" id="logoutBtn">Log out</button>
       </div>
     </header>
 
@@ -372,6 +526,7 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
     <div class="meta" id="heatMeta">—</div>
   </aside>
 </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -489,12 +644,13 @@ const fmt=n=>Math.round(n).toLocaleString('en-US');
 
 /* --- state ----------------------------------------------- */
 let S;
-function newGame(classId){
+function newGame(name,gender,classId){
   const r = rng((Date.now()^(Math.random()*0xffffffff))>>>0);
-  S = {name:'K. NOWAK',classId,level:1,xp:0,points:0,
+  S = {name,gender,classId,level:1,xp:0,points:0,
     alloc:{brawn:0,agility:0,insight:0,battery:0,charisma:0},
     credits:500,procs:5,inv:[],eq:{helmet:null,armor:null,gloves:null,pants:null,boots:null,weapon:null},
-    heat:0,coolantUsed:0,vehicle:0,floor:1,cleared:0,exped:null,offset:0,busy:false,dayKey:''};
+    heat:0,coolantUsed:0,vehicle:0,floor:1,cleared:0,exped:null,offset:0,busy:false,
+    dayKey:new Date().toDateString(),createdAt:Date.now()};
   [rollItem(r,1,'standard'),rollItem(r,1,'standard'),rollItem(r,1,'salvage')].forEach(it=>{
     if(!S.inv.some(x=>x.slot===it.slot)){S.inv.push(it);S.eq[it.slot]=it.uid;}
   });
@@ -818,11 +974,15 @@ function itemCard(it,equipped){
     </div></div>`;
 }
 function render(){
+  if(!S)return;
   checkDayRollover();
+  queueSave();
   const d=derive(),a=attributes(),c=CLASSES[S.classId];
   document.documentElement.style.setProperty('--heat',(S.heat/100).toFixed(3));
 
   document.getElementById('opName').textContent=S.name;
+  document.getElementById('opAvatar').innerHTML=avatar(S.gender,S.classId);
+  document.getElementById('opClass').style.color=CLASS_COLOR[S.classId];
   document.getElementById('opClass').textContent=c.name+' · '+c.role;
   document.getElementById('opLevel').textContent='LV '+S.level;
   document.getElementById('opXp').textContent=fmt(S.xp)+' / '+fmt(xpToNext(S.level))+' XP';
@@ -981,11 +1141,275 @@ document.getElementById('coolantBtn').onclick=()=>{
   if(S.coolantUsed<=0){toast('Ration is already full.');return;}
   S.procs-=2;S.coolantUsed--;toast('Coolant charge restored.');render();};
 
-/* --- boot ------------------------------------------------ */
-newGame('corpo_rat');
-S.dayKey=new Date(now()).toDateString();
-render();
-setInterval(render,30000);
+/* ==========================================================
+   ACCOUNTS · SESSION · SCREEN ROUTER
+   ========================================================== */
+
+/* Storage adapter. localStorage is the real backing store, but it throws in
+   sandboxed frames and in Safari private mode, so every call is guarded and
+   falls back to an in-memory map. The game never notices the difference; only
+   the persistence warning on the sign-in panel does. */
+const Store = (() => {
+  const mem = Object.create(null);
+  let live = false;
+  try {
+    const probe = '__overtime_probe__';
+    window.localStorage.setItem(probe, '1');
+    window.localStorage.removeItem(probe);
+    live = true;
+  } catch (e) { live = false; }
+  return {
+    live,
+    get(k){ try { return live ? localStorage.getItem(k) : (k in mem ? mem[k] : null); }
+            catch(e){ return k in mem ? mem[k] : null; } },
+    set(k,v){ try { if(live) localStorage.setItem(k,v); else mem[k]=v; } catch(e){ mem[k]=v; } },
+    del(k){ try { if(live) localStorage.removeItem(k); else delete mem[k]; } catch(e){ delete mem[k]; } }
+  };
+})();
+
+const K_ACCOUNTS = 'overtime.accounts.v1';
+const K_SESSION  = 'overtime.session.v1';
+
+let ACCOUNTS = {};
+let SESSION = null;
+
+function loadAccounts(){
+  try { ACCOUNTS = JSON.parse(Store.get(K_ACCOUNTS) || '{}') || {}; }
+  catch(e){ ACCOUNTS = {}; }
+}
+function writeAccounts(){ Store.set(K_ACCOUNTS, JSON.stringify(ACCOUNTS)); }
+
+/* Password handling. This is obfuscation, not security: anything that runs in
+   the browser can be read by whoever owns the browser. Salted SHA-256 keeps a
+   reused password from sitting in plain text in someone's devtools, and that is
+   the entire claim being made. Real accounts need a server. */
+async function hashPass(pw, salt){
+  const input = salt + '|' + pw;
+  if (window.crypto && crypto.subtle) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+  let h = 2166136261;                       // FNV-1a, insecure contexts only
+  for (let i = 0; i < input.length; i++){ h ^= input.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return 'fnv1a$' + (h >>> 0).toString(16);
+}
+function makeSalt(){
+  const a = new Uint8Array(12);
+  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+  else for (let i=0;i<a.length;i++) a[i] = Math.floor(Math.random()*256);
+  return [...a].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+/* --- save / load ------------------------------------------ */
+let saveTimer = null;
+function queueSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(persist, 400); }
+function persist(){
+  if (!SESSION || !S) return;
+  const acc = ACCOUNTS[SESSION];
+  if (!acc) return;
+  acc.character = S;
+  acc.lastSeenAt = Date.now();
+  writeAccounts();
+}
+window.addEventListener('beforeunload', persist);
+
+/* --- screens ---------------------------------------------- */
+function showScreen(name){
+  ['auth','create','game'].forEach(n =>
+    document.getElementById('screen-'+n).classList.toggle('active', n === name));
+  window.scrollTo(0,0);
+}
+
+/* --- avatar: a personnel-file photograph ------------------- */
+const CLASS_COLOR = { corpo_rat:'var(--cyan)', scavenger:'var(--amber)', hacker:'var(--magenta)' };
+function avatar(gender, classId, ring){
+  const col = CLASS_COLOR[classId] || 'var(--dim)';
+  const female = gender === 'female';
+  const head = female
+    ? '<circle cx="22" cy="18" r="7.2"/>'
+    : '<circle cx="22" cy="17.5" r="8"/>';
+  const hair = female
+    ? '<path d="M13 21c-1.1-9.4 3.6-13.6 9-13.6S32.1 11.6 31 21l-2.7-.6c.4-4.3-1.4-6.7-6.3-6.7s-6.7 2.4-6.3 6.7z"/>'
+      + '<rect x="12" y="16" width="3.1" height="13" rx="1.55"/><rect x="28.9" y="16" width="3.1" height="13" rx="1.55"/>'
+    : '<path d="M13.6 15c0-6 3.7-8.6 8.4-8.6S30.4 9 30.4 15l-2.3.7c-.5-2.8-1.9-3.9-3.4-3.7-2.9.4-6.3.5-9-.3-.2 1-.3 2.1-.1 3.1z"/>';
+  const body = female
+    ? '<path d="M8.5 44c0-8.4 6.2-12.9 13.5-12.9S35.5 35.6 35.5 44z"/>'
+    : '<path d="M5.5 44c0-9 7.4-13.7 16.5-13.7S38.5 35 38.5 44z"/>';
+  return '<svg viewBox="0 0 44 44" role="img" aria-label="' + (female?'Female':'Male') + ' operator">'
+    + '<rect width="44" height="44" fill="none"/>'
+    + '<g fill="' + col + '" opacity=".9">' + hair + head + body + '</g>'
+    + (ring ? '<rect x="1" y="1" width="42" height="42" fill="none" stroke="' + col + '" stroke-width="1.5"/>' : '')
+    + '</svg>';
+}
+
+/* --- character creation ----------------------------------- */
+let draft = { gender:'male', classId:'corpo_rat' };
+
+function previewStats(classId){
+  const c = CLASSES[classId], a = c.base, st = B.stats;
+  let off = 0;
+  for (const k in a) if (k !== c.main && k !== 'battery') off += a[k];
+  return {
+    maxHp: Math.round((st.baseHp + a.battery*st.hpPerBattery) * c.hpMult),
+    attack: Math.round((st.baseAttack + a[c.main]*st.attackPerMainStat + off*st.offStatBleed) * c.atkMult * 10)/10,
+    dodge: a.charisma/(a.charisma + st.dodgeSoftening),
+    crit: st.baseCrit + a.insight*st.critPerInsight,
+    initiative: st.baseInitiative + a.agility*st.initiativePerAgility,
+    charge: B.charge.baseGainPerTurn + a.insight*B.charge.gainPerInsight
+  };
+}
+
+function renderCreate(){
+  document.querySelectorAll('[data-ui="gender"]').forEach(b => {
+    const g = b.dataset.gender;
+    b.setAttribute('aria-pressed', String(g === draft.gender));
+    b.innerHTML = '<div class="idphoto">' + avatar(g, draft.classId) + '</div><span>'
+      + (g === 'male' ? 'Male' : 'Female') + '</span>';
+  });
+
+  document.getElementById('classPick').innerHTML = Object.keys(CLASSES).map(id => {
+    const c = CLASSES[id], sel = id === draft.classId;
+    return '<button class="classcard" data-ui="class" data-class="' + id + '" aria-pressed="' + sel + '"'
+      + ' style="border-left-color:' + (sel ? CLASS_COLOR[id] : 'var(--rule)') + '">'
+      + '<div class="idphoto" style="width:38px;height:38px;flex:0 0 38px">' + avatar(draft.gender, id) + '</div>'
+      + '<div><b style="color:' + (sel ? CLASS_COLOR[id] : 'var(--ink)') + '">' + c.name + '</b>'
+      + '<small>' + c.role + ' · main stat ' + STAT_META[c.main].pl + ' / ' + STAT_META[c.main].en + '</small></div></button>';
+  }).join('');
+
+  const c = CLASSES[draft.classId], p = previewStats(draft.classId), a = c.base;
+  document.getElementById('classPreview').innerHTML =
+    '<h3 style="font-family:var(--display);font-size:22px;color:' + CLASS_COLOR[draft.classId] + '">' + c.name + '</h3>'
+    + '<p class="formnote" style="margin:2px 0 12px">' + c.role
+      + ' · health ×' + c.hpMult.toFixed(2) + ' · damage ×' + c.atkMult.toFixed(2) + '</p>'
+    + Object.keys(STAT_META).map(k =>
+        '<div class="statrow"><div>' + STAT_META[k].pl + (k === c.main ? ' ◂' : '')
+        + '<br><em>' + STAT_META[k].en + '</em></div><b>' + a[k] + '</b></div>').join('')
+    + '<div style="margin-top:12px" class="dl">'
+      + '<dt>Starting health</dt><dd>' + fmt(p.maxHp) + '</dd>'
+      + '<dt>Starting attack</dt><dd>' + p.attack + '</dd>'
+      + '<dt>Dodge</dt><dd>' + (p.dodge*100).toFixed(1) + '%</dd>'
+      + '<dt>Crit</dt><dd>' + (p.crit*100).toFixed(1) + '%</dd>'
+      + '<dt>Initiative</dt><dd>' + p.initiative.toFixed(1) + '</dd>'
+      + '<dt>Charge / turn</dt><dd>' + p.charge.toFixed(1) + '%</dd></div>'
+    + '<div class="ult"><b>' + c.ult.name + '</b><small>' + c.ult.desc
+      + ' Fires automatically at 100% charge.</small></div>';
+}
+
+/* --- auth panel ------------------------------------------- */
+let authMode = 'login';
+const $ = id => document.getElementById(id);
+
+function renderAuth(){
+  const reg = authMode === 'register';
+  document.querySelectorAll('[data-ui="mode"]').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.mode === authMode)));
+  $('confirmField').hidden = !reg;
+  $('authSubmit').textContent = reg ? 'Create account' : 'Sign in';
+  $('authPass').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
+  $('authErr').textContent = '';
+  const n = Object.keys(ACCOUNTS).length;
+  $('authNote').textContent = reg
+    ? 'Accounts are stored on this device only. Nothing is transmitted anywhere, which is the most privacy this city has offered in decades.'
+    : (n ? n + ' account' + (n>1?'s':'') + ' on file for this device.' : 'No accounts on file. Register to begin.');
+  if (!Store.live){
+    const w = $('storageWarn');
+    w.hidden = false;
+    w.textContent = 'Storage is unavailable in this frame, so accounts and progress live in memory only and will not survive a reload. Open the file directly in a browser tab for persistence.';
+  }
+}
+
+async function submitAuth(){
+  const user = $('authUser').value.trim();
+  const pass = $('authPass').value;
+  const err = m => { $('authErr').textContent = m; };
+  if (user.length < 3) return err('Registered name needs at least 3 characters.');
+  if (pass.length < 6) return err('Access code needs at least 6 characters.');
+  const key = user.toLowerCase();
+
+  if (authMode === 'register'){
+    if (ACCOUNTS[key]) return err('That name is already on file. Sign in instead.');
+    if (pass !== $('authPass2').value) return err('The two access codes do not match.');
+    const salt = makeSalt();
+    ACCOUNTS[key] = { username:user, salt, hash: await hashPass(pass, salt),
+                      createdAt: Date.now(), lastSeenAt: Date.now(), character: null };
+    writeAccounts();
+  } else {
+    const acc = ACCOUNTS[key];
+    if (!acc) return err('No account under that name on this device.');
+    if (await hashPass(pass, acc.salt) !== acc.hash) return err('Access code rejected.');
+  }
+
+  SESSION = key;
+  Store.set(K_SESSION, key);
+  $('authPass').value = ''; $('authPass2').value = '';
+  enterAccount();
+}
+
+/* Route by what the account actually has, so a half-finished intake resumes
+   at the intake form rather than dropping someone into an empty dashboard. */
+function enterAccount(){
+  const acc = ACCOUNTS[SESSION];
+  if (!acc) { logout(); return; }
+  if (acc.character){
+    S = acc.character;
+    if (!S.gender) S.gender = 'male';        // migrate pre-intake saves
+    S.busy = false;
+    S.offset = 0;
+    showScreen('game');
+    render();
+  } else {
+    draft = { gender:'male', classId:'corpo_rat' };
+    $('charName').value = acc.username;
+    $('createErr').textContent = '';
+    renderCreate();
+    showScreen('create');
+  }
+}
+
+function startGame(){
+  const name = $('charName').value.trim();
+  if (name.length < 2){ $('createErr').textContent = 'The paperwork needs a name of at least 2 characters.'; return; }
+  newGame(name, draft.gender, draft.classId);
+  persist();
+  showScreen('game');
+  render();
+  toast('Welcome to the payroll, ' + name + '. Your first shift started nine minutes ago.');
+}
+
+function logout(){
+  persist();
+  SESSION = null;
+  S = null;
+  Store.del(K_SESSION);
+  authMode = 'login';
+  $('authUser').value = ''; $('authPass').value = '';
+  renderAuth();
+  showScreen('auth');
+}
+
+/* --- wiring ----------------------------------------------- */
+document.addEventListener('click', ev => {
+  const t = ev.target.closest('[data-ui]');
+  if (!t) return;
+  const kind = t.dataset.ui;
+  if (kind === 'mode'){ authMode = t.dataset.mode; renderAuth(); }
+  else if (kind === 'gender'){ draft.gender = t.dataset.gender; renderCreate(); }
+  else if (kind === 'class'){ draft.classId = t.dataset.class; renderCreate(); }
+});
+$('authSubmit').onclick = submitAuth;
+['authUser','authPass','authPass2'].forEach(id => $(id).addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitAuth();
+}));
+$('charName').addEventListener('keydown', e => { if (e.key === 'Enter') startGame(); });
+$('startGame').onclick = startGame;
+$('logoutBtn').onclick = logout;
+
+/* --- boot ------------------------------------------------- */
+loadAccounts();
+SESSION = Store.get(K_SESSION);
+if (SESSION && ACCOUNTS[SESSION]) enterAccount();
+else { SESSION = null; Store.del(K_SESSION); renderAuth(); showScreen('auth'); }
+setInterval(() => { if (S) render(); }, 30000);
 </script>
 </body>
 </html>

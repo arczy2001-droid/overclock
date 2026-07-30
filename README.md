@@ -5,9 +5,13 @@ legally several buildings. High-tech, low-life, dystopian bureaucracy, dark humo
 
 ## Try it
 
-Open `ui/index.html` in a browser. It is a complete playable prototype — attack floors,
-allocate `Krzepa / Spryt / Przenikliwość / Bateria / Charyzma`, equip and upgrade gear,
-vent heat, book guard shifts, buy vehicles. State is in memory for the session only.
+Open `ui/index.html` in a browser. Register an account, fill in the intake form, and the
+dashboard opens: attack floors, allocate `Krzepa / Spryt / Przenikliwość / Bateria /
+Charyzma`, equip and upgrade gear, vent heat, book guard shifts, buy vehicles.
+
+Accounts, the active session and your character are stored in `localStorage`, so signing
+back in resumes exactly where you left off. Where storage is blocked — a sandboxed frame,
+Safari private mode — the game falls back to memory and says so on the sign-in panel.
 
 The "skip ahead 1 hour" button on the Guard duty tab exists so you can see the expedition
 collection flow without waiting eight hours.
@@ -36,6 +40,7 @@ if (outcome.ok) {
 | `docs/ARCHITECTURE.md` | full spec: authority model, combat, scaling, UI architecture, balance method |
 | `schema/*.schema.json` | JSON Schema for player state, items, combat, floor scaling |
 | `schema/example-save.json` | a real save produced by the engine, two floors in |
+| `src/state/accounts.ts` | typed accounts, sessions, password hashing, storage adapter |
 | `src/config/balance.ts` | every tunable number in the game |
 | `src/systems/combat.ts` | the auto-battler |
 | `src/systems/overheat.ts` | heat, vehicles, coolant, local-midnight reset |
