@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://overtime.exe/schema/player-state.json",
+  "title": "PlayerState",
+  "description": "The complete persisted save. Authoritative copy lives server-side; the client holds a cache.",
+  "type": "object",
+  "required": [
+    "schemaVersion", "id", "name", "classId", "timezone", "createdAt", "lastSeenAt",
+    "level", "xp", "unspentPoints", "allocated", "wallet", "inventory", "equipped",
+    "overheat", "progress", "expedition", "flags"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "type": "integer", "minimum": 1 },
+    "id": { "type": "string", "pattern": "^op_[a-z0-9]+$" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 24 },
+    "classId": { "enum": ["corpo_rat", "scavenger", "hacker"] },
+    "timezone": {
+      "type": "string",
+      "description": "IANA zone. Drives the 00:00 overheat reset and the daily coolant ration."
+    },
+    "createdAt": { "type": "integer" },
+    "lastSeenAt": { "type": "integer" },
+
+    "level": { "type": "integer", "minimum": 1, "maximum": 200 },
+    "xp": { "type": "integer", "minimum": 0 },
+    "unspentPoints": { "type": "integer", "minimum": 0 },
+    "allocated": { "$ref": "#/$defs/statBlock" },
+
+    "wallet": {
+      "type": "object",
+      "required": ["credits", "processors"],
+      "additionalProperties": false,
+      "properties": {
+        "credits": { "type": "integer", "minimum": 0, "description": "Kredyty. Soft currency." },
+        "processors": { "type": "integer", "minimum": 0, "description": "Procesory. Hard currency." }
+      }
+    },
+
+    "inventory": { "type": "array", "items": { "$ref": "item.schema.json" } },
+    "equipped": {
+      "type": "object",
+      "required": ["helmet", "armor", "gloves", "pants", "boots", "weapon"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(helmet|armor|gloves|pants|boots|weapon)$": { "type": ["string", "null"] }
+      }
+    },
+
+    "overheat": {
+      "type": "object",
+      "required": ["value", "coolantUsedToday", "dayKey", "vehicleTier"],
+      "additionalProperties": false,
+      "properties": {
+        "value": { "type": "number", "minimum": 0, "maximum": 100 },
+        "coolantUsedToday": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "dayKey": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Local calendar day. A mismatch on read triggers the midnight reset."
+        },
+        "vehicleTier": { "type": "integer", "minimum": 0, "maximum": 4 }
+      }
+    },
+
+    "progress": {
+      "type": "object",
+      "required": ["highestFloorCleared", "currentFloor", "totalRuns", "totalWins"],
+      "additionalProperties": false,
+      "properties": {
+        "highestFloorCleared": { "type": "integer", "minimum": 0 },
+        "currentFloor": { "type": "integer", "minimum": 1 },
+        "totalRuns": { "type": "integer", "minimum": 0 },
+        "totalWins": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "expedition": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["active", "durationHours", "startedAt", "endsAt", "floorSnapshot", "seed"],
+          "additionalProperties": false,
+          "properties": {
+            "active": { "const": true },
+            "durationHours": { "enum": [1, 4, 8] },
+            "startedAt": { "type": "integer" },
+            "endsAt": { "type": "integer" },
+            "floorSnapshot": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Reward rate is locked at launch; clearing floors mid-shift does not retroactively pay."
+            },
+            "seed": { "type": "integer", "description": "Rewards are rolled from this at collection, not at launch." }
+          }
+        }
+      ]
+    },
+
+    "flags": {
+      "type": "object",
+      "required": ["tutorialDone", "unlocks"],
+      "additionalProperties": false,
+      "properties": {
+        "tutorialDone": { "type": "boolean" },
+        "unlocks": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+
+  "$defs": {
+    "statBlock": {
+      "type": "object",
+      "required": ["brawn", "agility", "insight", "battery", "charisma"],
+      "additionalProperties": false,
+      "description": "Armor is deliberately absent: it is gear-only and never receives points.",
+      "properties": {
+        "brawn": { "type": "integer", "minimum": 0 },
+        "agility": { "type": "integer", "minimum": 0 },
+        "insight": { "type": "integer", "minimum": 0 },
+        "battery": { "type": "integer", "minimum": 0 },
+        "charisma": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

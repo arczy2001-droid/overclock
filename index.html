@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OVERTIME.EXE — Operator Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   The whole interface is a corporate field terminal that thinks
+   it is a filing system. Panels carry clause codes, the tab bar
+   is an index, and the thermal column on the right leaks colour
+   into the rest of the UI as the rig cooks.
+   ============================================================ */
+:root{
+  --void:#07090D; --panel:#10141C; --panel-2:#151B25; --rule:#1E2733;
+  --ink:#C3CEDB; --dim:#65727F; --faint:#3B4653;
+  --cyan:#34D9F0; --magenta:#FF2E88; --amber:#F5A623; --violet:#8B6BFF; --ok:#3DDC97;
+  --r-salvage:#65727F; --r-standard:#C3CEDB; --r-licensed:#34D9F0;
+  --r-blackmarket:#FF2E88; --r-prototype:#F5A623;
+  --display:'Saira Condensed',ui-sans-serif,system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'Courier New',monospace;
+  /* driven by JS: 0 -> 1 as the rig overheats */
+  --heat:0;
+  --heat-tint:color-mix(in oklab, var(--cyan) calc((1 - var(--heat)) * 100%), var(--magenta));
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--void); color:var(--ink);
+  font-family:var(--mono); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(1100px 700px at 88% -8%, rgba(255,46,136,calc(0.05 + var(--heat)*0.16)), transparent 62%),
+    radial-gradient(900px 600px at 4% 0%, rgba(52,217,240,.05), transparent 60%);
+  min-height:100vh;
+}
+h1,h2,h3,.display{font-family:var(--display);text-transform:uppercase;letter-spacing:.055em;margin:0}
+button{font:inherit;color:inherit;cursor:pointer;border:none;background:none}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+
+/* --- shell ------------------------------------------------- */
+.shell{max-width:1240px;margin:0 auto;padding:18px 16px 64px;display:grid;grid-template-columns:1fr 92px;gap:16px}
+.main{min-width:0}
+
+/* --- header ------------------------------------------------ */
+.masthead{border:1px solid var(--rule);background:linear-gradient(180deg,var(--panel-2),var(--panel));padding:12px 14px;position:relative;overflow:hidden}
+.masthead::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.012) 3px 4px);pointer-events:none}
+.masthead-top{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 16px}
+.wordmark{font-family:var(--display);font-weight:900;font-size:30px;letter-spacing:.02em;color:var(--ink)}
+.wordmark span{color:var(--heat-tint)}
+.stamp{margin-left:auto;font-size:10px;letter-spacing:.24em;color:var(--faint);text-align:right;line-height:1.35}
+.opstrip{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:12px;padding-top:10px;border-top:1px solid var(--rule);align-items:center}
+.readout{display:flex;flex-direction:column;gap:1px}
+.readout b{font-family:var(--display);font-weight:700;font-size:19px;letter-spacing:.03em}
+.readout small{font-size:9.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+.credits b{color:var(--amber)} .procs b{color:var(--violet)}
+.xpwrap{flex:1;min-width:150px}
+.xpbar{height:5px;background:var(--rule);margin-top:5px}
+.xpbar i{display:block;height:100%;background:var(--cyan)}
+
+/* --- tabs: an index, not buttons --------------------------- */
+.tabs{display:flex;flex-wrap:wrap;gap:0;margin-top:14px;border:1px solid var(--rule);border-bottom:none;background:var(--panel)}
+.tab{flex:1 1 130px;padding:11px 12px;text-align:left;border-right:1px solid var(--rule);border-bottom:2px solid transparent;color:var(--dim);transition:color .15s,background .15s}
+.tab:last-child{border-right:none}
+.tab em{display:block;font-style:normal;font-size:10px;letter-spacing:.2em;color:var(--faint)}
+.tab strong{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.06em;text-transform:uppercase}
+.tab:hover{color:var(--ink);background:var(--panel-2)}
+.tab[aria-selected="true"]{color:var(--ink);background:var(--panel-2);border-bottom-color:var(--heat-tint)}
+.tab[aria-selected="true"] em{color:var(--heat-tint)}
+
+/* --- panels ------------------------------------------------ */
+.panel{border:1px solid var(--rule);background:var(--panel);padding:16px 16px 18px;position:relative}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(288px,1fr));gap:14px}
+.card{border:1px solid var(--rule);background:var(--panel-2);padding:12px 13px;position:relative}
+.card>h3{font-size:14px;font-weight:700;color:var(--ink);margin-bottom:10px;padding-right:44px}
+.clause{position:absolute;top:9px;right:11px;font-size:9.5px;letter-spacing:.16em;color:var(--faint)}
+.hint{color:var(--dim);font-size:12px;margin:6px 0 0}
+
+/* --- attributes -------------------------------------------- */
+.attr{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--rule)}
+.attr:last-of-type{border-bottom:none}
+.attr .pl{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.05em}
+.attr .en{font-size:10.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+.attr .val{font-family:var(--display);font-weight:900;font-size:20px;min-width:44px;text-align:right}
+.plus{border:1px solid var(--rule);background:var(--panel);padding:3px 10px;font-family:var(--display);font-weight:700;font-size:14px;color:var(--cyan);white-space:nowrap}
+.plus:hover:not(:disabled){background:var(--cyan);color:var(--void);border-color:var(--cyan)}
+.plus:disabled{color:var(--faint);cursor:not-allowed}
+.plus.credit{color:var(--amber);font-size:11px}
+.plus.credit:hover:not(:disabled){background:var(--amber);color:var(--void);border-color:var(--amber)}
+
+/* --- derived stat table ------------------------------------ */
+.dl{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px}
+.dl dt{color:var(--dim)} .dl dd{margin:0;text-align:right;font-weight:600}
+
+/* --- gear -------------------------------------------------- */
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:7px}
+.slot{border:1px solid var(--rule);background:var(--panel);padding:7px 8px;min-height:56px;text-align:left;width:100%}
+.slot small{display:block;font-size:9px;letter-spacing:.18em;color:var(--faint);text-transform:uppercase}
+.slot b{display:block;font-weight:500;font-size:12px;margin-top:3px;line-height:1.3}
+.slot.empty b{color:var(--faint)}
+.inv{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;padding-right:4px}
+.item{border:1px solid var(--rule);background:var(--panel);padding:8px 9px;border-left-width:3px}
+.item-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.item-head b{font-weight:600;font-size:12.5px}
+.item-head i{font-style:normal;font-size:10px;letter-spacing:.14em;color:var(--dim);margin-left:auto}
+.mods{font-size:11px;color:var(--dim);margin-top:4px;line-height:1.55}
+.mods span{color:var(--ink)}
+.item-actions{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap}
+.mini{border:1px solid var(--rule);padding:2px 9px;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.mini:hover:not(:disabled){color:var(--ink);border-color:var(--ink)}
+.mini:disabled{opacity:.35;cursor:not-allowed}
+.mini.go{color:var(--cyan);border-color:rgba(52,217,240,.4)}
+.mini.cash{color:var(--amber);border-color:rgba(245,166,35,.4)}
+
+/* --- deployment -------------------------------------------- */
+.floorpick{display:flex;align-items:center;gap:10px}
+.floorpick button{border:1px solid var(--rule);width:38px;height:38px;font-family:var(--display);font-size:18px;font-weight:700}
+.floorpick button:hover:not(:disabled){border-color:var(--cyan);color:var(--cyan)}
+.floorpick button:disabled{color:var(--faint);cursor:not-allowed}
+.floornum{font-family:var(--display);font-weight:900;font-size:44px;line-height:1;letter-spacing:.01em}
+.sector{font-size:10.5px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+.boss-flag{display:inline-block;background:var(--magenta);color:var(--void);font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.14em;padding:1px 7px;margin-left:8px;vertical-align:middle}
+.attack{width:100%;margin-top:12px;padding:14px;background:var(--heat-tint);color:var(--void);font-family:var(--display);font-weight:900;font-size:19px;letter-spacing:.13em;text-transform:uppercase;transition:filter .15s}
+.attack:hover:not(:disabled){filter:brightness(1.15)}
+.attack:disabled{background:var(--rule);color:var(--faint);cursor:not-allowed}
+.vs{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-bottom:12px}
+.fighter b{display:block;font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.04em}
+.fighter.foe{text-align:right}
+.hpbar{height:9px;background:var(--rule);margin-top:5px;position:relative}
+.hpbar i{display:block;height:100%;background:var(--ok);transition:width .18s linear}
+.foe .hpbar i{background:var(--magenta)}
+.hpnum{font-size:10.5px;color:var(--dim);margin-top:3px}
+.chargewrap{margin-top:6px}
+.chargebar{height:4px;background:var(--rule);position:relative;overflow:hidden}
+.chargebar i{display:block;height:100%;background:var(--violet);transition:width .18s linear}
+.chargebar.full i{background:var(--amber)}
+.versus{font-family:var(--display);font-weight:900;color:var(--faint);font-size:13px;letter-spacing:.16em}
+.log{border:1px solid var(--rule);background:#080B10;height:250px;overflow-y:auto;padding:9px 11px;font-size:12px;line-height:1.65}
+.log p{margin:0;color:var(--dim)}
+.log .t-attack{color:var(--ink)} .log .t-crit{color:var(--amber);font-weight:600}
+.log .t-dodge{color:var(--cyan)} .log .t-ultimate{color:var(--magenta);font-weight:600;letter-spacing:.08em}
+.log .t-heal{color:var(--ok)} .log .t-reflect{color:var(--violet)}
+.log .t-execute{color:var(--magenta);font-weight:600}
+.log .t-death,.log .t-battle_end{color:var(--ink);font-weight:600}
+.log .t-round_start{color:var(--faint)}
+.log .t-battle_start{color:var(--cyan)}
+.payout{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid var(--rule);font-size:12px}
+.payout b{font-family:var(--display);font-size:16px}
+
+/* --- guard duty -------------------------------------------- */
+.shifts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.shift{border:1px solid var(--rule);background:var(--panel);padding:11px 9px;text-align:center}
+.shift:hover:not(:disabled){border-color:var(--cyan)}
+.shift b{display:block;font-family:var(--display);font-weight:900;font-size:24px}
+.shift small{display:block;font-size:10px;color:var(--dim);margin-top:4px;line-height:1.5}
+.progress{height:26px;border:1px solid var(--rule);background:var(--panel);position:relative;margin:12px 0 10px}
+.progress i{display:block;height:100%;background:linear-gradient(90deg,rgba(52,217,240,.25),rgba(52,217,240,.5))}
+.progress span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;letter-spacing:.14em}
+.incident{border-left:2px solid var(--rule);padding-left:9px;margin:7px 0;color:var(--dim);font-size:12px}
+
+/* --- requisition ------------------------------------------- */
+.veh{border:1px solid var(--rule);background:var(--panel);padding:11px 12px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+.veh.owned{border-color:rgba(61,220,151,.35)}
+.veh b{font-family:var(--display);font-weight:700;font-size:15px;letter-spacing:.04em;display:block}
+.veh small{color:var(--dim);font-size:11.5px;display:block;margin-top:2px}
+.veh .red{color:var(--cyan);font-weight:600}
+.buy{border:1px solid var(--rule);padding:7px 14px;font-family:var(--display);font-weight:700;font-size:13px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.buy:hover:not(:disabled){border-color:var(--amber);color:var(--amber)}
+.buy:disabled{color:var(--faint);cursor:not-allowed}
+.buy.done{color:var(--ok);border-color:rgba(61,220,151,.35)}
+
+/* --- THE SIGNATURE: thermal column ------------------------- */
+.thermal{position:sticky;top:18px;height:calc(100vh - 96px);min-height:420px;border:1px solid var(--rule);background:var(--panel);display:flex;flex-direction:column;align-items:center;padding:11px 8px;gap:9px}
+.thermal .cap{font-size:9px;letter-spacing:.2em;color:var(--faint);writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap}
+.tube{flex:1;width:100%;border:1px solid var(--rule);background:#080B10;position:relative;overflow:hidden;display:flex;align-items:flex-end}
+.tube i{display:block;width:100%;height:var(--fill,0%);background:var(--heat-tint);transition:height .3s ease,width .3s ease;
+  background-image:repeating-linear-gradient(-45deg,rgba(0,0,0,.22) 0 6px,transparent 6px 12px)}
+.tube .ticks{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent 0 calc(20% - 1px),var(--rule) calc(20% - 1px),var(--rule) 20%)}
+.tube .pct{position:absolute;left:0;right:0;top:8px;text-align:center;font-family:var(--display);font-weight:900;font-size:19px;color:var(--ink);text-shadow:0 0 8px var(--void)}
+.vent{width:100%;border:1px solid var(--rule);padding:7px 3px;font-family:var(--display);font-weight:700;font-size:11.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--cyan);line-height:1.3}
+.vent:hover:not(:disabled){background:var(--cyan);color:var(--void)}
+.vent:disabled{color:var(--faint);cursor:not-allowed}
+.thermal .meta{font-size:9.5px;color:var(--dim);text-align:center;line-height:1.5}
+
+/* --- toast ------------------------------------------------- */
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--panel-2);border:1px solid var(--heat-tint);padding:9px 16px;font-size:12.5px;z-index:50;max-width:calc(100vw - 32px);opacity:0;pointer-events:none;transition:opacity .2s}
+.toast.show{opacity:1}
+
+/* --- responsive -------------------------------------------- */
+@media (max-width:880px){
+  .shell{grid-template-columns:1fr}
+  .thermal{position:static;height:auto;min-height:0;flex-direction:row;align-items:center;order:-1}
+  .thermal .cap{writing-mode:horizontal-tb;transform:none}
+  .tube{height:34px;align-items:stretch;flex-direction:row}
+  .tube i{height:100%;width:var(--fill,0%)}
+  .tube .ticks{background:repeating-linear-gradient(90deg,transparent 0 calc(20% - 1px),var(--rule) calc(20% - 1px),var(--rule) 20%)}
+  .tube .pct{top:50%;transform:translateY(-50%)}
+  .vent{width:auto;flex:0 0 96px}
+  .thermal .meta{flex:0 0 84px}
+  .shifts{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="main">
+    <header class="masthead">
+      <div class="masthead-top">
+        <div class="wordmark">OVERTIME<span>.EXE</span></div>
+        <div class="stamp">
+          MUNICIPAL LABOUR REGISTRY · FORM 12-B<br>
+          OPERATOR TERMINAL · SESSION NOT ARCHIVED
+        </div>
+      </div>
+      <div class="opstrip">
+        <div class="readout"><b id="opName">—</b><small id="opClass">unassigned</small></div>
+        <div class="readout xpwrap">
+          <b id="opLevel">LV 1</b>
+          <small id="opXp">0 / 0 XP</small>
+          <div class="xpbar"><i id="xpFill" style="width:0%"></i></div>
+        </div>
+        <div class="readout credits"><b id="wCredits">0</b><small>Kredyty · credits</small></div>
+        <div class="readout procs"><b id="wProcs">0</b><small>Procesory · processors</small></div>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="personnel" aria-selected="true"><em>01</em><strong>Personnel</strong></button>
+      <button class="tab" role="tab" data-tab="deployment" aria-selected="false"><em>02</em><strong>Deployment</strong></button>
+      <button class="tab" role="tab" data-tab="guard" aria-selected="false"><em>03</em><strong>Guard duty</strong></button>
+      <button class="tab" role="tab" data-tab="requisition" aria-selected="false"><em>04</em><strong>Requisition</strong></button>
+    </nav>
+
+    <!-- 01 PERSONNEL -->
+    <section class="panel" id="tab-personnel" role="tabpanel">
+      <div class="grid2">
+        <div class="card">
+          <span class="clause">§1.1</span>
+          <h3>Attributes</h3>
+          <div id="attrList"></div>
+          <p class="hint" id="pointsHint"></p>
+        </div>
+        <div class="card">
+          <span class="clause">§1.2</span>
+          <h3>Combat readout</h3>
+          <dl class="dl" id="derived"></dl>
+          <p class="hint" id="ultHint"></p>
+        </div>
+        <div class="card">
+          <span class="clause">§2.1</span>
+          <h3>Issued equipment</h3>
+          <div class="slots" id="slots"></div>
+        </div>
+        <div class="card">
+          <span class="clause">§2.2</span>
+          <h3>Held property</h3>
+          <div class="inv" id="inventory"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 DEPLOYMENT -->
+    <section class="panel" id="tab-deployment" role="tabpanel" hidden>
+      <div class="grid2">
+        <div class="card">
+          <span class="clause">§3.1</span>
+          <h3>Assigned floor</h3>
+          <div class="floorpick">
+            <button id="floorDown" aria-label="Previous floor">‹</button>
+            <div>
+              <div class="floornum" id="floorNum">1</div>
+              <div class="sector" id="floorSector">—</div>
+            </div>
+            <button id="floorUp" aria-label="Next floor">›</button>
+          </div>
+          <dl class="dl" id="floorInfo" style="margin-top:12px"></dl>
+          <button class="attack" id="attackBtn">Clock in</button>
+          <p class="hint" id="attackHint"></p>
+        </div>
+        <div class="card">
+          <span class="clause">§3.2</span>
+          <h3>Incident record</h3>
+          <div class="vs">
+            <div class="fighter">
+              <b id="fName">Operator</b>
+              <div class="hpbar"><i id="fHp" style="width:100%"></i></div>
+              <div class="hpnum" id="fHpNum">—</div>
+              <div class="chargewrap">
+                <div class="chargebar" id="fChargeWrap"><i id="fCharge" style="width:0%"></i></div>
+                <div class="hpnum" id="fChargeNum">charge 0%</div>
+              </div>
+            </div>
+            <div class="versus">VS</div>
+            <div class="fighter foe">
+              <b id="eName">—</b>
+              <div class="hpbar"><i id="eHp" style="width:100%"></i></div>
+              <div class="hpnum" id="eHpNum">—</div>
+            </div>
+          </div>
+          <div class="log" id="log"><p>No incidents on record. Clock in to begin.</p></div>
+          <div class="payout" id="payout" hidden></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 GUARD DUTY -->
+    <section class="panel" id="tab-guard" role="tabpanel" hidden>
+      <div class="grid2">
+        <div class="card">
+          <span class="clause">§4.1</span>
+          <h3>Shift booking</h3>
+          <p class="hint" style="margin-top:0">Guard duty runs while the terminal is closed and ignores core temperature entirely. Pay scales with the deepest floor you have cleared.</p>
+          <div class="shifts" id="shifts"></div>
+          <div id="shiftActive" hidden>
+            <div class="progress"><i id="shiftFill" style="width:0%"></i><span id="shiftLabel"></span></div>
+            <div class="item-actions">
+              <button class="mini go" id="collectBtn">Collect pay</button>
+              <button class="mini" id="skipBtn">Buy out remaining time</button>
+              <button class="mini" id="fastBtn">Prototype: skip ahead 1 hour</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <span class="clause">§4.2</span>
+          <h3>Shift report</h3>
+          <div id="report"><p class="hint" style="margin-top:0">No shift filed yet.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 REQUISITION -->
+    <section class="panel" id="tab-requisition" role="tabpanel" hidden>
+      <div class="grid2">
+        <div class="card">
+          <span class="clause">§5.1</span>
+          <h3>Transport</h3>
+          <p class="hint" style="margin-top:0">Each tier permanently reduces the heat generated per floor attack. Finance requires you buy them in order.</p>
+          <div id="vehicles"></div>
+        </div>
+        <div class="card">
+          <span class="clause">§5.2</span>
+          <h3>Grey market</h3>
+          <p class="hint" style="margin-top:0">Unmarked crate. Contents legally described as "assorted".</p>
+          <div class="veh">
+            <div><b>Unmarked crate</b><small>One item, rolled near your current depth.</small></div>
+            <button class="buy" id="crateBtn">4 ◆</button>
+          </div>
+          <div class="veh">
+            <div><b>Coolant canister</b><small id="coolantInfo">—</small></div>
+            <button class="buy" id="coolantBtn">2 ◆</button>
+          </div>
+          <p class="hint">◆ = Procesory. This prototype keeps everything in memory: reload and the shift ends, permanently, like most employment here.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- SIGNATURE ELEMENT -->
+  <aside class="thermal">
+    <div class="cap">CORE TEMPERATURE</div>
+    <div class="tube">
+      <div class="ticks"></div>
+      <div class="pct" id="heatPct">0%</div>
+      <i id="heatFill" style="--fill:0%"></i>
+    </div>
+    <button class="vent" id="ventBtn">Vent<br>−20%</button>
+    <div class="meta" id="heatMeta">—</div>
+  </aside>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ==========================================================
+   Prototype runtime. This mirrors src/ closely enough to play
+   with; the TypeScript modules are the real implementation.
+   No storage APIs: state lives in memory for the session.
+   ========================================================== */
+
+const B = {
+  stats:{baseHp:90,hpPerBattery:11,baseAttack:9,attackPerMainStat:1.35,offStatBleed:.35,
+    dodgeSoftening:95,dodgeCap:.6,baseCrit:.04,critPerInsight:.0035,critCap:.75,
+    baseCritMultiplier:1.6,baseInitiative:10,initiativePerAgility:.6,minDamageThrough:.1},
+  charge:{max:100,baseGainPerTurn:14,gainPerInsight:.22,gainOnDamaged:5,gainOnDodge:9},
+  combat:{varianceMin:.9,varianceMax:1.1,maxRounds:60},
+  progression:{pointsPerLevel:5,xpBase:90,xpGrowth:1.072,statBuyBaseCost:60,statBuyGrowth:1.045},
+  floors:{hpBase:120,hpPerFloor:70,hpGrowth:1.016,attackBase:6,attackPerFloor:11,attackGrowth:1,
+    armorBase:2,armorPerFloor:2.2,dodgeBase:.02,dodgePerFloor:.0016,dodgeCap:.35,
+    initiativeBase:11,initiativePerFloor:.35,bossInterval:10,bossHp:2.2,bossAtk:1.35,bossArm:1.4,
+    creditsBase:45,creditsPerFloor:10,creditsGrowth:1.012,xpBase:40,xpPerFloor:4,xpGrowth:1.012,
+    bossReward:3,procChance:.012,bossProcChance:.35,itemChance:.2,bossItemChance:.9},
+  heat:{max:100,base:10,perStep:.05,stepSize:25,cap:20,min:2,coolantCharges:10,coolantCut:20,
+    veh:[0,.1,.2,.3,.5],maxCut:.75},
+  exped:{crHour:210,crFloor:.085,xpHour:55,xpFloor:.06,bonus:{1:1,4:1.08,8:1.18},
+    procHour:.06,procFloor:.0025,itemHour:.35,ilvlOffset:-3},
+  econ:{upBase:90,upGrowth:1.24,upStep:.08,maxPlus:15,sellRatio:.25}
+};
+
+const CLASSES = {
+  corpo_rat:{name:'Corpo-rat',role:'Tactical DPS',main:'insight',hpMult:1.05,atkMult:1.0,
+    base:{brawn:6,agility:9,insight:14,battery:9,charisma:11},
+    ult:{id:'corporate_restructuring',name:'Corporate Restructuring',
+      desc:'Three precision strikes, then +30% evasion for 3 turns.'}},
+  scavenger:{name:'Scavenger',role:'Tank',main:'brawn',hpMult:1.45,atkMult:.8,
+    base:{brawn:14,agility:6,insight:7,battery:15,charisma:6},
+    ult:{id:'jury_rigged_armor',name:'Jury-Rigged Armor',
+      desc:'Welds plating back on for a heal and returns 30% of the last hit to sender.'}},
+  hacker:{name:'Hacker',role:'Burst Damage',main:'agility',hpMult:.95,atkMult:1.2,
+    base:{brawn:6,agility:15,insight:12,battery:10,charisma:8},
+    ult:{id:'format_c',name:'Format C:',
+      desc:'Strips enemy armor for a turn. Anything under 10% HP is deleted outright.'}}
+};
+
+const STAT_META = {
+  brawn:{pl:'Krzepa',en:'Brawn'}, agility:{pl:'Spryt',en:'Agility'},
+  insight:{pl:'Przenikliwość',en:'Insight'}, battery:{pl:'Bateria',en:'Battery'},
+  charisma:{pl:'Charyzma',en:'Charisma'}
+};
+const SLOT_META = {helmet:{pl:'Hełm',en:'Helmet'},armor:{pl:'Zbroja',en:'Armor'},
+  gloves:{pl:'Rękawice',en:'Gloves'},pants:{pl:'Spodnie',en:'Pants'},
+  boots:{pl:'Buty',en:'Boots'},weapon:{pl:'Broń',en:'Weapon'}};
+
+const VEHICLES = [
+  {tier:0,name:'On Foot',red:0,cr:0,pr:0,blurb:'Your legs. Unlicensed, unregistered, currently the fastest thing you own.'},
+  {tier:1,name:'Rusty Scooter',red:.1,cr:6000,pr:0,blurb:'The brakes are a suggestion the city has stopped making.'},
+  {tier:2,name:'Cargo Bike "Mule"',red:.2,cr:32000,pr:0,blurb:'Registered as agricultural equipment for tax reasons.'},
+  {tier:3,name:'Grey-Market Sedan',red:.3,cr:140000,pr:15,blurb:'Previous owner is legally still driving it.'},
+  {tier:4,name:'Corporate Shuttle (Repossessed)',red:.5,cr:500000,pr:60,blurb:'The seat still remembers a vice-president.'}
+];
+
+const BASES = [
+  {id:'helm_visor',name:'Compliance Visor',slot:'helmet',s:{armor:.45,insight:.35}},
+  {id:'helm_hardhat',name:'Dented Hardhat',slot:'helmet',s:{armor:.65,battery:.25}},
+  {id:'armor_vest',name:'Courier Plate Vest',slot:'armor',s:{armor:.9,battery:.4}},
+  {id:'armor_suit',name:'Off-Season Corpo Suit',slot:'armor',s:{armor:.6,charisma:.5}},
+  {id:'gloves_grip',name:'Grip-Tape Gauntlets',slot:'gloves',s:{armor:.35,brawn:.5}},
+  {id:'gloves_haptic',name:'Haptic Deck Gloves',slot:'gloves',s:{armor:.25,agility:.55}},
+  {id:'pants_cargo',name:'Overspec Cargo Pants',slot:'pants',s:{armor:.5,battery:.35}},
+  {id:'pants_plated',name:'Riot-Surplus Legguards',slot:'pants',s:{armor:.75,brawn:.25}},
+  {id:'boots_runner',name:'Alley Runners',slot:'boots',s:{armor:.3,agility:.6}},
+  {id:'boots_mag',name:'Mag-Lock Boots',slot:'boots',s:{armor:.55,brawn:.3}},
+  {id:'weapon_pipe',name:'Repurposed Pipe',slot:'weapon',s:{flatDamage:2.4,brawn:.4}},
+  {id:'weapon_stunbaton',name:'Compliance Baton',slot:'weapon',s:{flatDamage:2.0,insight:.5}},
+  {id:'weapon_deck',name:'Breach Deck',slot:'weapon',s:{flatDamage:1.8,agility:.6}},
+  {id:'weapon_smg',name:'Unlicensed SMG',slot:'weapon',s:{flatDamage:2.6,agility:.35}}
+];
+const RARITY = {salvage:{label:'Salvage',power:.8,affixes:0},standard:{label:'Standard Issue',power:1,affixes:1},
+  licensed:{label:'Licensed',power:1.22,affixes:2},blackmarket:{label:'Black Market',power:1.5,affixes:3},
+  prototype:{label:'Prototype',power:1.9,affixes:4}};
+const RWEIGHT = {salvage:40,standard:34,licensed:18,blackmarket:6.5,prototype:1.5};
+const AFFIXES = [
+  {id:'reinforced',label:'Reinforced',roll:i=>({armor:Math.max(1,Math.round(i*.6))})},
+  {id:'overclocked',label:'Overclocked',roll:i=>({damagePct:.03+i*.002})},
+  {id:'ballasted',label:'Ballasted',roll:i=>({flatHp:Math.round(14+i*5.5)})},
+  {id:'greased',label:'Greased',roll:i=>({dodgePct:.012+i*.0008})},
+  {id:'targeting',label:'Targeting Suite',roll:i=>({critChancePct:.015+i*.001})},
+  {id:'hollowpoint',label:'Hollow-Point',roll:i=>({critDamagePct:.06+i*.004})},
+  {id:'capacitor',label:'Capacitor Bank',roll:i=>({chargeRatePct:.04+i*.0022})},
+  {id:'liquidcooled',label:'Liquid-Cooled',roll:i=>({coolingPct:.01+i*.0006})},
+  {id:'brawn_mod',label:'Servo-Assisted',roll:i=>({brawn:Math.round(2+i*.45)})},
+  {id:'agility_mod',label:'Reflex-Wired',roll:i=>({agility:Math.round(2+i*.45)})},
+  {id:'insight_mod',label:'Co-Processor',roll:i=>({insight:Math.round(2+i*.45)})},
+  {id:'charisma_mod',label:'Voice Modulator',roll:i=>({charisma:Math.round(2+i*.4)})}
+];
+const SECTORS=['Sub-Level Parking','Fulfilment Annexe','Wet Market Mezzanine','Records & Redaction',
+  'Coolant Reclamation','Executive Daycare','Server Farm Nine','Human Resources','The Atrium','Board Level'];
+const HOSTILES=['Unpaid Intern','Debt Collection Drone','Vending Machine (Armed)','Off-Duty Security',
+  'Compliance Auditor','Feral Delivery Bot','Union Buster','Middle Manager','Sanitation Mech','Loyalty Program Enforcer'];
+const BOSSES=['Regional Supervisor','The Ombudsman','Chief Efficiency Officer','Legal Department','The Landlord'];
+const INCIDENTS=['Chased off three kids with a crowbar and a legitimate grievance.',
+  'Signed for a package addressed to a department dissolved in 2061.',
+  'Watched a rival courier get towed. Vehicle first, courier second.',
+  'Found a functioning vending machine. Told nobody.',
+  'Filed an incident report about the lack of incident reports.',
+  'Stood very still for four hours. Billed for six.',
+  'Reset a breaker labelled DO NOT RESET. Nothing happened. Yet.',
+  'Talked a drone out of its warranty.'];
+
+/* --- rng ------------------------------------------------- */
+function rng(seed){let s=seed>>>0;return()=>{s=(s+0x6d2b79f5)>>>0;let t=s;
+  t=Math.imul(t^(t>>>15),t|1);t^=t+Math.imul(t^(t>>>7),t|61);return((t^(t>>>14))>>>0)/4294967296;};}
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const fmt=n=>Math.round(n).toLocaleString('en-US');
+
+/* --- state ----------------------------------------------- */
+let S;
+function newGame(classId){
+  const r = rng((Date.now()^(Math.random()*0xffffffff))>>>0);
+  S = {name:'K. NOWAK',classId,level:1,xp:0,points:0,
+    alloc:{brawn:0,agility:0,insight:0,battery:0,charisma:0},
+    credits:500,procs:5,inv:[],eq:{helmet:null,armor:null,gloves:null,pants:null,boots:null,weapon:null},
+    heat:0,coolantUsed:0,vehicle:0,floor:1,cleared:0,exped:null,offset:0,busy:false,dayKey:''};
+  [rollItem(r,1,'standard'),rollItem(r,1,'standard'),rollItem(r,1,'salvage')].forEach(it=>{
+    if(!S.inv.some(x=>x.slot===it.slot)){S.inv.push(it);S.eq[it.slot]=it.uid;}
+  });
+}
+
+/* --- items ----------------------------------------------- */
+function rollItem(r,ilvl,forced){
+  const lvl=Math.max(1,Math.round(ilvl));
+  const base=BASES[Math.floor(r()*BASES.length)];
+  let rarity=forced;
+  if(!rarity){
+    const depth=Math.min(1,lvl/120);
+    const w={salvage:RWEIGHT.salvage*(1-depth*.85),standard:RWEIGHT.standard*(1-depth*.35),
+      licensed:RWEIGHT.licensed*(1+depth*.9),blackmarket:RWEIGHT.blackmarket*(1+depth*2.2),
+      prototype:RWEIGHT.prototype*(1+depth*4)};
+    const tot=Object.values(w).reduce((a,b)=>a+b,0);let x=r()*tot;
+    for(const k in w){x-=w[k];if(x<=0){rarity=k;break;}}
+    rarity=rarity||'salvage';
+  }
+  const meta=RARITY[rarity],mods={};
+  for(const k in base.s) mods[k]=Math.max(1,Math.round(base.s[k]*lvl*meta.power*(.92+r()*.16)));
+  const affixes=[],used=new Set();
+  for(let i=0;i<meta.affixes;i++){
+    const pool=AFFIXES.filter(a=>!used.has(a.id));if(!pool.length)break;
+    const a=pool[Math.floor(r()*pool.length)];used.add(a.id);
+    affixes.push({id:a.id,label:a.label,modifiers:a.roll(lvl)});
+  }
+  return {uid:'it'+Math.floor(r()*1e9).toString(36),baseId:base.id,slot:base.slot,rarity,ilvl:lvl,plus:0,
+    name:affixes.length?affixes[0].label+' '+base.name:base.name,modifiers:mods,affixes,
+    sellValue:Math.round(lvl*18*meta.power*(1+affixes.length*.25))};
+}
+function itemMods(it){
+  const mult=1+it.plus*B.econ.upStep,out={};
+  const all=[it.modifiers,...it.affixes.map(a=>a.modifiers)];
+  all.forEach(m=>{for(const k in m) out[k]=(out[k]||0)+m[k]*mult;});
+  return out;
+}
+function equippedItems(){return Object.values(S.eq).filter(Boolean).map(u=>S.inv.find(i=>i.uid===u)).filter(Boolean);}
+function gearMods(){const out={};equippedItems().forEach(it=>{const m=itemMods(it);for(const k in m)out[k]=(out[k]||0)+m[k];});return out;}
+
+/* --- derived stats --------------------------------------- */
+function attributes(){
+  const c=CLASSES[S.classId],g=gearMods(),o={};
+  for(const k in STAT_META) o[k]=c.base[k]+S.alloc[k]+Math.floor(g[k]||0);
+  return o;
+}
+function derive(){
+  const c=CLASSES[S.classId],g=gearMods(),a=attributes(),s=B.stats;
+  const main=a[c.main];
+  let off=0;for(const k in a) if(k!==c.main&&k!=='battery') off+=a[k];
+  const hp=(s.baseHp+a.battery*s.hpPerBattery)*c.hpMult+(g.flatHp||0);
+  const atk=(s.baseAttack+main*s.attackPerMainStat+off*s.offStatBleed+(g.flatDamage||0))*c.atkMult;
+  return {
+    maxHp:Math.round(hp*(1+(g.hpPct||0))),
+    attack:Math.round(atk*(1+(g.damagePct||0))*10)/10,
+    armor:Math.round(g.armor||0),
+    dodge:clamp(a.charisma/(a.charisma+s.dodgeSoftening)+(g.dodgePct||0),0,s.dodgeCap),
+    crit:clamp(s.baseCrit+a.insight*s.critPerInsight+(g.critChancePct||0),0,s.critCap),
+    critMult:s.baseCritMultiplier+(g.critDamagePct||0),
+    initiative:s.baseInitiative+a.agility*s.initiativePerAgility,
+    chargeRate:(B.charge.baseGainPerTurn+a.insight*B.charge.gainPerInsight)*(1+(g.chargeRatePct||0)),
+    cooling:g.coolingPct||0
+  };
+}
+const xpToNext=lv=>Math.round(B.progression.xpBase*Math.pow(B.progression.xpGrowth,lv-1));
+function grantXp(n){S.xp+=n;let gained=0;
+  while(S.xp>=xpToNext(S.level)){S.xp-=xpToNext(S.level);S.level++;S.points+=B.progression.pointsPerLevel;gained++;}
+  return gained;}
+const statCost=k=>Math.round(B.progression.statBuyBaseCost*Math.pow(B.progression.statBuyGrowth,S.alloc[k]));
+const upCost=it=>Math.round(B.econ.upBase*it.ilvl*.35*Math.pow(B.econ.upGrowth,it.plus));
+
+/* --- floors ---------------------------------------------- */
+function getFloor(n){
+  const f=B.floors,boss=n%f.bossInterval===0,r=rng(n*2654435761);
+  const sec=SECTORS[Math.floor((n-1)/10)%SECTORS.length];
+  const name=boss?BOSSES[(n/f.bossInterval-1)%BOSSES.length]+' — Tier '+Math.ceil(n/50)
+                 :HOSTILES[Math.floor(r()*HOSTILES.length)];
+  const rm=boss?f.bossReward:1;
+  return {floor:n,sector:sec,name,boss,
+    stats:{maxHp:Math.round((f.hpBase+f.hpPerFloor*n)*Math.pow(f.hpGrowth,n-1)*(boss?f.bossHp:1)),
+      attack:Math.round((f.attackBase+f.attackPerFloor*n)*Math.pow(f.attackGrowth,n-1)*(boss?f.bossAtk:1)*10)/10,
+      armor:Math.round((f.armorBase+n*f.armorPerFloor)*(boss?f.bossArm:1)),
+      dodge:clamp(f.dodgeBase+n*f.dodgePerFloor,0,f.dodgeCap),crit:.05,critMult:1.5,
+      initiative:f.initiativeBase+n*f.initiativePerFloor,chargeRate:0,cooling:0},
+    rw:{credits:Math.round((f.creditsBase+f.creditsPerFloor*n)*Math.pow(f.creditsGrowth,n-1)*rm),
+      xp:Math.round((f.xpBase+f.xpPerFloor*n)*Math.pow(f.xpGrowth,n-1)*rm),
+      proc:boss?f.bossProcChance:f.procChance,item:boss?f.bossItemChance:f.itemChance}};
+}
+
+/* --- overheat -------------------------------------------- */
+function coolingPct(){return clamp(B.heat.veh[S.vehicle]+derive().cooling,0,B.heat.maxCut);}
+function heatCost(n){
+  const steps=Math.floor((n-1)/B.heat.stepSize);
+  const raw=clamp(B.heat.base*(1+steps*B.heat.perStep),B.heat.min,B.heat.cap)*(1-coolingPct());
+  return Math.max(B.heat.min,Math.round(raw*10)/10);
+}
+function now(){return Date.now()+S.offset;}
+function msToMidnight(){const d=new Date(now());const n=new Date(d);n.setHours(24,0,0,0);return n-d;}
+function checkDayRollover(){
+  const d=new Date(now()).toDateString();
+  if(S.dayKey!==d){S.dayKey=d;S.heat=0;S.coolantUsed=0;}
+}
+
+/* --- combat ---------------------------------------------- */
+function runBattle(seed,floor,opStats){
+  const r=rng(seed),log=[];let round=0,dealt=0,taken=0;
+  const c=CLASSES[S.classId];
+  const A={id:'op',name:S.name,side:'op',hp:opStats.maxHp,st:opStats,charge:0,buffs:[],bypass:-1,lastHit:0};
+  const E={id:'foe',name:floor.name,side:'foe',hp:floor.stats.maxHp,st:floor.stats,charge:0,buffs:[],bypass:-1,lastHit:0};
+  const snap=()=>({op:Math.max(0,Math.round(A.hp)),foe:Math.max(0,Math.round(E.hp)),
+    opMax:A.st.maxHp,foeMax:E.st.maxHp,charge:A.charge});
+  const emit=(type,text)=>log.push({round,type,text,hp:snap()});
+  const eff=u=>{const o={...u.st};u.buffs.forEach(b=>{o.dodge+=b.m.dodgePct||0;o.armor+=b.m.armor||0;});
+    o.dodge=clamp(o.dodge,0,B.stats.dodgeCap);return o;};
+
+  emit('battle_start',`FLOOR ${floor.floor} — ${floor.sector}. Hostile on file: ${E.name}.`);
+
+  function hit(at,df,mult,label,opt={}){
+    const a=eff(at),d=eff(df);
+    if(opt.canDodge!==false&&r()<d.dodge){
+      df.charge=clamp(df.charge+B.charge.gainOnDodge,0,100);
+      emit('dodge',`${df.name} is simply not there. ${label} hits municipal concrete.`);return 0;
+    }
+    const v=B.combat.varianceMin+r()*(B.combat.varianceMax-B.combat.varianceMin);
+    const crit=r()<a.crit;
+    const raw=a.attack*mult*v*(crit?a.critMult:1);
+    const off=opt.ignoreArmor||df.bypass>=round;
+    const dmg=Math.max(1,Math.round(Math.max(raw*B.stats.minDamageThrough,raw-(off?0:d.armor))));
+    df.hp-=dmg;df.lastHit=dmg;
+    df.charge=clamp(df.charge+B.charge.gainOnDamaged,0,100);
+    if(at.side==='op')dealt+=dmg;else taken+=dmg;
+    emit(crit?'crit':'attack',
+      `${at.name} → ${df.name}: ${label} for ${dmg}${crit?' (CRIT)':''}${off?' (armor offline)':''}.`);
+    if(df.hp<=0)emit('death',`${df.name} stops complying. Permanently.`);
+    return dmg;
+  }
+  function ultimate(u,t){
+    u.charge=0;emit('ultimate',`>> ${c.ult.name.toUpperCase()} <<`);
+    if(c.ult.id==='corporate_restructuring'){
+      for(let i=0;i<3&&t.hp>0;i++)hit(u,t,.62,`restructuring pass ${i+1}/3`);
+      u.buffs.push({id:'ev',label:'Plausible Deniability',turns:3,m:{dodgePct:.3}});
+      emit('buff_applied',`${u.name}: Plausible Deniability (3 turns).`);
+      return true;
+    }
+    if(c.ult.id==='jury_rigged_armor'){
+      const heal=Math.round(u.st.armor*4+u.st.maxHp*.08);
+      u.hp=Math.min(u.st.maxHp,u.hp+heal);
+      emit('heal',`${u.name} welds ${heal} HP of plating back on. It holds. Mostly.`);
+      const ref=Math.round(u.lastHit*.3);
+      if(ref>0&&t.hp>0){t.hp-=ref;dealt+=ref;
+        emit('reflect',`${ref} damage returned to sender, postage due.`);
+        if(t.hp<=0)emit('death',`${t.name} is refunded out of existence.`);}
+      return false;
+    }
+    t.bypass=round+1;
+    emit('buff_applied',`${t.name}'s plating is unmounted. Filesystem exposed.`);
+    if(t.hp>0&&t.hp<=t.st.maxHp*.1){
+      dealt+=Math.round(t.hp);t.hp=0;
+      emit('execute',`rm -rf ${t.name}. No confirmation prompt.`);
+      emit('death',`${t.name} is deleted. Recycle bin unavailable.`);
+      return true;
+    }
+    return false;
+  }
+
+  const order=[A,E].sort((x,y)=>y.st.initiative-x.st.initiative);
+  let done=false;
+  for(round=1;round<=B.combat.maxRounds&&!done;round++){
+    emit('round_start',`— round ${round} —`);
+    for(const u of order){
+      if(u.hp<=0)continue;
+      const t=u===A?E:A;
+      if(t.hp<=0){done=true;break;}
+      u.buffs=u.buffs.filter(b=>--b.turns>0);
+      if(u.side==='op')u.charge=clamp(u.charge+u.st.chargeRate,0,100);
+      emit('turn_start',`${u.name} acts. [charge ${Math.round(u.charge)}%]`);
+      let used=false;
+      if(u.side==='op'&&u.charge>=100)used=ultimate(u,t);
+      if(t.hp<=0){done=true;break;}
+      if(!used)hit(u,t,1,'strike');
+      if(t.hp<=0){done=true;break;}
+    }
+  }
+  const victory=E.hp<=0;
+  emit('battle_end',victory?`Floor ${floor.floor} cleared. Paperwork filed automatically.`
+    :A.hp<=0?'Operator offline. Respawn fee deducted from nothing.'
+    :'Thermal throttle. The fight is called on a technicality. You lose.');
+  return {victory,log,dealt,taken,rounds:round-1};
+}
+
+/* --- actions --------------------------------------------- */
+function attack(){
+  checkDayRollover();
+  const cost=heatCost(S.floor);
+  if(S.heat+cost>B.heat.max){toast('Core temperature critical. Vent heat or wait for 00:00.');return;}
+  if(S.busy)return;
+  S.heat=clamp(S.heat+cost,0,B.heat.max);
+  const seed=(Math.random()*0xffffffff)>>>0;
+  const f=getFloor(S.floor);
+  const res=runBattle(seed,f,derive());
+  let payout=null;
+  if(res.victory){
+    const r=rng(seed^0x9e3779b9);
+    payout={credits:Math.round(f.rw.credits*(.9+r()*.25)),
+      procs:r()<f.rw.proc?(f.boss?1+Math.floor(r()*3):1):0,xp:f.rw.xp,items:[]};
+    if(r()<f.rw.item)payout.items.push(rollItem(r,f.floor,f.boss?'licensed':undefined));
+    S.credits+=payout.credits;S.procs+=payout.procs;S.inv.push(...payout.items);
+    payout.levels=grantXp(payout.xp);
+    if(S.floor>S.cleared){S.cleared=S.floor;S.floor++;}
+  }
+  playLog(res,payout);
+}
+
+function playLog(res,payout){
+  const el=document.getElementById('log');el.innerHTML='';
+  const pay=document.getElementById('payout');pay.hidden=true;
+  S.busy=true;render();
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const step=reduced?0:34;
+  let i=0;
+  const tick=()=>{
+    if(i>=res.log.length){
+      S.busy=false;
+      if(payout){
+        pay.hidden=false;
+        pay.innerHTML=`<div><b style="color:var(--amber)">+${fmt(payout.credits)}</b> credits</div>`+
+          (payout.procs?`<div><b style="color:var(--violet)">+${payout.procs}</b> processors</div>`:'')+
+          `<div><b style="color:var(--cyan)">+${fmt(payout.xp)}</b> xp</div>`+
+          (payout.items.length?`<div><b style="color:var(--ok)">+${payout.items.length}</b> item filed</div>`:'')+
+          (payout.levels?`<div><b>LV +${payout.levels}</b></div>`:'');
+      }
+      render();return;
+    }
+    const e=res.log[i++];
+    const p=document.createElement('p');p.className='t-'+e.type;p.textContent=e.text;
+    el.appendChild(p);el.scrollTop=el.scrollHeight;
+    updateBars(e.hp);
+    if(step)setTimeout(tick,step);else tick();
+  };
+  if(step)setTimeout(tick,step);else tick();
+}
+function updateBars(h){
+  document.getElementById('fHp').style.width=(h.op/h.opMax*100)+'%';
+  document.getElementById('eHp').style.width=(h.foe/h.foeMax*100)+'%';
+  document.getElementById('fHpNum').textContent=fmt(h.op)+' / '+fmt(h.opMax);
+  document.getElementById('eHpNum').textContent=fmt(h.foe)+' / '+fmt(h.foeMax);
+  const c=Math.round(h.charge);
+  document.getElementById('fCharge').style.width=c+'%';
+  document.getElementById('fChargeNum').textContent='charge '+c+'%';
+  document.getElementById('fChargeWrap').classList.toggle('full',c>=100);
+}
+
+function vent(){
+  checkDayRollover();
+  const left=B.heat.coolantCharges-S.coolantUsed;
+  if(left<=0){toast('Daily coolant ration spent. Requisition resets at 00:00.');return;}
+  if(S.heat<=0){toast('Already cold.');return;}
+  S.heat=clamp(S.heat-B.heat.coolantCut,0,100);S.coolantUsed++;render();
+}
+
+function startShift(h){
+  if(S.exped){toast('Already on guard duty. One shift at a time.');return;}
+  S.exped={h,start:now(),end:now()+h*3600000,floor:Math.max(1,S.cleared),seed:(Math.random()*0xffffffff)>>>0};
+  render();
+}
+function shiftRates(floor,h){
+  const e=B.exped,b=e.bonus[h]||1;
+  return {cr:Math.round(e.crHour*(1+floor*e.crFloor)*b),xp:Math.round(e.xpHour*(1+floor*e.xpFloor)*b),
+    proc:e.procHour+floor*e.procFloor,items:e.itemHour};
+}
+function collectShift(){
+  if(!S.exped||now()<S.exped.end){toast('Shift still running.');return;}
+  const e=S.exped,r=rng(e.seed),rt=shiftRates(e.floor,e.h);
+  const credits=Math.round(rt.cr*e.h*(.94+r()*.16));let procs=0;
+  for(let i=0;i<e.h;i++)if(r()<rt.proc)procs++;
+  const items=[];let rolls=rt.items*e.h;
+  while(rolls>0){if(r()<Math.min(1,rolls))items.push(rollItem(r,Math.max(1,e.floor+B.exped.ilvlOffset)));rolls--;}
+  const xp=Math.round(rt.xp*e.h);
+  S.credits+=credits;S.procs+=procs;S.inv.push(...items);const lv=grantXp(xp);
+  const inc=[INCIDENTS[Math.floor(r()*INCIDENTS.length)]];
+  if(e.h>=4)inc.push(INCIDENTS[Math.floor(r()*INCIDENTS.length)]);
+  if(e.h>=8)inc.push(INCIDENTS[Math.floor(r()*INCIDENTS.length)]);
+  S.exped=null;
+  document.getElementById('report').innerHTML=
+    `<div class="payout" style="border:none;margin:0;padding:0">
+      <div><b style="color:var(--amber)">+${fmt(credits)}</b> credits</div>
+      ${procs?`<div><b style="color:var(--violet)">+${procs}</b> processors</div>`:''}
+      <div><b style="color:var(--cyan)">+${fmt(xp)}</b> xp</div>
+      ${items.length?`<div><b style="color:var(--ok)">+${items.length}</b> items</div>`:''}
+      ${lv?`<div><b>LV +${lv}</b></div>`:''}
+    </div>`+[...new Set(inc)].map(t=>`<p class="incident">${t}</p>`).join('');
+  render();
+}
+
+function toast(msg){
+  const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+/* --- render ---------------------------------------------- */
+function modLine(m){
+  const N={armor:'Armor',flatDamage:'Damage',flatHp:'HP',damagePct:'Damage',hpPct:'HP',
+    critChancePct:'Crit',critDamagePct:'Crit dmg',dodgePct:'Dodge',chargeRatePct:'Charge',
+    coolingPct:'Cooling',brawn:'Krzepa',agility:'Spryt',insight:'Przenikliwość',
+    battery:'Bateria',charisma:'Charyzma'};
+  return Object.entries(m).map(([k,v])=>{
+    const pct=k.endsWith('Pct');
+    return `<span>${pct?'+'+(v*100).toFixed(1)+'%':'+'+Math.round(v)}</span> ${N[k]||k}`;
+  }).join(' · ');
+}
+function itemCard(it,equipped){
+  const eq=Object.values(S.eq).includes(it.uid);
+  return `<div class="item" style="border-left-color:var(--r-${it.rarity})">
+    <div class="item-head"><b style="color:var(--r-${it.rarity})">${it.name}${it.plus?' +'+it.plus:''}</b>
+      <i>${SLOT_META[it.slot].en} · i${it.ilvl} · ${RARITY[it.rarity].label}</i></div>
+    <div class="mods">${modLine(itemMods(it))}</div>
+    <div class="item-actions">
+      <button class="mini go" data-act="equip" data-uid="${it.uid}" ${eq?'disabled':''}>${eq?'Issued':'Equip'}</button>
+      <button class="mini" data-act="upgrade" data-uid="${it.uid}" ${it.plus>=B.econ.maxPlus?'disabled':''}>+1 · ${fmt(upCost(it))} cr</button>
+      <button class="mini cash" data-act="sell" data-uid="${it.uid}" ${eq?'disabled':''}>Sell · ${fmt(it.sellValue)}</button>
+    </div></div>`;
+}
+function render(){
+  checkDayRollover();
+  const d=derive(),a=attributes(),c=CLASSES[S.classId];
+  document.documentElement.style.setProperty('--heat',(S.heat/100).toFixed(3));
+
+  document.getElementById('opName').textContent=S.name;
+  document.getElementById('opClass').textContent=c.name+' · '+c.role;
+  document.getElementById('opLevel').textContent='LV '+S.level;
+  document.getElementById('opXp').textContent=fmt(S.xp)+' / '+fmt(xpToNext(S.level))+' XP';
+  document.getElementById('xpFill').style.width=(S.xp/xpToNext(S.level)*100)+'%';
+  document.getElementById('wCredits').textContent=fmt(S.credits);
+  document.getElementById('wProcs').textContent=fmt(S.procs);
+
+  // thermal
+  document.getElementById('heatFill').style.setProperty('--fill',S.heat+'%');
+  document.getElementById('heatPct').textContent=Math.round(S.heat)+'%';
+  const left=B.heat.coolantCharges-S.coolantUsed;
+  const ms=msToMidnight(),hh=Math.floor(ms/3600000),mm=Math.floor(ms%3600000/60000);
+  document.getElementById('ventBtn').disabled=left<=0||S.heat<=0;
+  document.getElementById('heatMeta').innerHTML=
+    `${left}/10 coolant<br>${Math.floor((100-S.heat)/heatCost(S.floor))} runs left<br>resets in ${hh}h ${mm}m`;
+
+  // attributes
+  document.getElementById('attrList').innerHTML=Object.keys(STAT_META).map(k=>`
+    <div class="attr">
+      <div><div class="pl">${STAT_META[k].pl}${k===c.main?' ◂':''}</div><div class="en">${STAT_META[k].en}</div></div>
+      <div class="val">${a[k]}</div>
+      <div style="display:flex;gap:5px">
+        <button class="plus" data-act="point" data-stat="${k}" ${S.points<=0?'disabled':''}>+1</button>
+        <button class="plus credit" data-act="buy" data-stat="${k}" ${S.credits<statCost(k)?'disabled':''}>${fmt(statCost(k))} cr</button>
+      </div>
+    </div>`).join('');
+  document.getElementById('pointsHint').textContent=
+    S.points>0?`${S.points} unspent point${S.points>1?'s':''}. ◂ marks your class's main attribute.`
+      :'No unspent points. Buy them with credits, or clear a floor.';
+
+  document.getElementById('derived').innerHTML=`
+    <dt>Health</dt><dd>${fmt(d.maxHp)}</dd>
+    <dt>Attack</dt><dd>${d.attack}</dd>
+    <dt>Pancerz · armor</dt><dd>${d.armor}</dd>
+    <dt>Dodge</dt><dd>${(d.dodge*100).toFixed(1)}%</dd>
+    <dt>Crit</dt><dd>${(d.crit*100).toFixed(1)}% ×${d.critMult.toFixed(2)}</dd>
+    <dt>Initiative</dt><dd>${d.initiative.toFixed(1)}</dd>
+    <dt>Charge / turn</dt><dd>${d.chargeRate.toFixed(1)}%</dd>
+    <dt>Cooling</dt><dd>${(coolingPct()*100).toFixed(0)}%</dd>`;
+  document.getElementById('ultHint').innerHTML=
+    `<b style="color:var(--magenta)">${c.ult.name}</b> — ${c.ult.desc} Fires automatically at 100% charge.`;
+
+  document.getElementById('slots').innerHTML=Object.keys(SLOT_META).map(s=>{
+    const it=S.eq[s]?S.inv.find(i=>i.uid===S.eq[s]):null;
+    return `<button class="slot ${it?'':'empty'}" data-act="unequip" data-slot="${s}">
+      <small>${SLOT_META[s].pl} · ${SLOT_META[s].en}</small>
+      <b style="${it?'color:var(--r-'+it.rarity+')':''}">${it?it.name+(it.plus?' +'+it.plus:''):'— empty —'}</b></button>`;
+  }).join('');
+
+  const inv=[...S.inv].sort((x,y)=>y.ilvl-x.ilvl);
+  document.getElementById('inventory').innerHTML=inv.length?inv.map(itemCard).join('')
+    :'<p class="hint" style="margin:0">Nothing held. Clear a floor or book a shift.</p>';
+
+  // deployment
+  const f=getFloor(S.floor),cost=heatCost(S.floor);
+  document.getElementById('floorNum').innerHTML=S.floor+(f.boss?'<span class="boss-flag">Boss</span>':'');
+  document.getElementById('floorSector').textContent=f.sector;
+  document.getElementById('floorDown').disabled=S.floor<=1;
+  document.getElementById('floorUp').disabled=S.floor>=S.cleared+1;
+  document.getElementById('floorInfo').innerHTML=`
+    <dt>Hostile</dt><dd>${f.name}</dd>
+    <dt>Health</dt><dd>${fmt(f.stats.maxHp)}</dd>
+    <dt>Attack</dt><dd>${f.stats.attack}</dd>
+    <dt>Armor</dt><dd>${f.stats.armor}</dd>
+    <dt>Heat cost</dt><dd style="color:var(--magenta)">+${cost}%</dd>
+    <dt>Pays</dt><dd>${fmt(f.rw.credits)} cr · ${fmt(f.rw.xp)} xp</dd>`;
+  const blocked=S.heat+cost>B.heat.max;
+  const btn=document.getElementById('attackBtn');
+  btn.disabled=blocked||S.busy;
+  btn.textContent=S.busy?'In progress…':blocked?'Too hot to deploy':'Clock in';
+  document.getElementById('attackHint').textContent=blocked
+    ?'Vent heat with coolant, book a guard shift instead, or wait for the 00:00 reset.'
+    :`Cleared up to floor ${S.cleared}. Losing still costs the heat.`;
+  document.getElementById('fName').textContent=S.name;
+  document.getElementById('eName').textContent=f.name;
+
+  // guard duty
+  const shifts=document.getElementById('shifts');
+  shifts.innerHTML=[1,4,8].map(h=>{
+    const rt=shiftRates(Math.max(1,S.cleared),h);
+    return `<button class="shift" data-act="shift" data-h="${h}" ${S.exped?'disabled':''}>
+      <b>${h}h</b><small>${fmt(rt.cr*h)} cr<br>${fmt(rt.xp*h)} xp<br>~${(rt.items*h).toFixed(1)} items</small></button>`;
+  }).join('');
+  const act=document.getElementById('shiftActive');
+  if(S.exped){
+    act.hidden=false;
+    const total=S.exped.end-S.exped.start,el=clamp(now()-S.exped.start,0,total);
+    const rem=Math.max(0,S.exped.end-now());
+    document.getElementById('shiftFill').style.width=(el/total*100)+'%';
+    document.getElementById('shiftLabel').textContent=rem>0
+      ?`${Math.floor(rem/3600000)}h ${Math.floor(rem%3600000/60000)}m remaining — floor ${S.exped.floor} rate`
+      :'Shift complete. Collect pay.';
+    document.getElementById('collectBtn').disabled=rem>0;
+    document.getElementById('skipBtn').disabled=rem<=0;
+    document.getElementById('skipBtn').textContent=`Buy out · ${Math.max(1,Math.ceil(rem/3600000*3))} ◆`;
+  } else act.hidden=true;
+
+  // requisition
+  document.getElementById('vehicles').innerHTML=VEHICLES.map(v=>{
+    const owned=S.vehicle>=v.tier,next=S.vehicle===v.tier-1;
+    const afford=S.credits>=v.cr&&S.procs>=v.pr;
+    return `<div class="veh ${owned?'owned':''}">
+      <div><b>${v.name}</b><small>${v.tier?`<span class="red">−${v.red*100}% heat per attack</span> · `:''}${v.blurb}</small></div>
+      ${owned?'<button class="buy done" disabled>Owned</button>'
+        :`<button class="buy" data-act="veh" data-tier="${v.tier}" ${next&&afford?'':'disabled'}>
+          ${fmt(v.cr)} cr${v.pr?' + '+v.pr+' ◆':''}</button>`}</div>`;
+  }).join('');
+  document.getElementById('coolantInfo').textContent=`Restores one of today's ${B.heat.coolantCharges} charges. ${left} left.`;
+  document.getElementById('coolantBtn').disabled=S.procs<2||S.coolantUsed<=0;
+  document.getElementById('crateBtn').disabled=S.procs<4;
+}
+
+/* --- events ---------------------------------------------- */
+document.addEventListener('click',ev=>{
+  const t=ev.target.closest('[data-act],[data-tab]');
+  if(!t)return;
+  if(t.dataset.tab){
+    document.querySelectorAll('.tab').forEach(x=>x.setAttribute('aria-selected',x===t));
+    ['personnel','deployment','guard','requisition'].forEach(n=>
+      document.getElementById('tab-'+n).hidden=(n!==t.dataset.tab));
+    return;
+  }
+  const a=t.dataset.act;
+  if(a==='point'){if(S.points>0){S.points--;S.alloc[t.dataset.stat]++;}}
+  else if(a==='buy'){const c=statCost(t.dataset.stat);
+    if(S.credits>=c){S.credits-=c;S.alloc[t.dataset.stat]++;}else toast('Not enough credits.');}
+  else if(a==='equip'){const it=S.inv.find(i=>i.uid===t.dataset.uid);if(it)S.eq[it.slot]=it.uid;}
+  else if(a==='unequip'){S.eq[t.dataset.slot]=null;}
+  else if(a==='sell'){const it=S.inv.find(i=>i.uid===t.dataset.uid);
+    if(it){S.credits+=it.sellValue;S.inv=S.inv.filter(i=>i.uid!==it.uid);}}
+  else if(a==='upgrade'){const it=S.inv.find(i=>i.uid===t.dataset.uid);
+    if(it){const c=upCost(it);if(S.credits>=c){S.credits-=c;it.plus++;it.sellValue=Math.round(it.sellValue*1.15);}
+      else toast('Not enough credits.');}}
+  else if(a==='shift'){startShift(+t.dataset.h);return;}
+  else if(a==='veh'){const v=VEHICLES.find(x=>x.tier==t.dataset.tier);
+    if(v&&S.vehicle===v.tier-1&&S.credits>=v.cr&&S.procs>=v.pr){S.credits-=v.cr;S.procs-=v.pr;S.vehicle=v.tier;
+      toast(v.name+' acquired. Heat generation down '+v.red*100+'%.');}}
+  render();
+});
+document.getElementById('attackBtn').onclick=attack;
+document.getElementById('ventBtn').onclick=vent;
+document.getElementById('floorDown').onclick=()=>{if(S.floor>1){S.floor--;render();}};
+document.getElementById('floorUp').onclick=()=>{if(S.floor<=S.cleared){S.floor++;render();}};
+document.getElementById('collectBtn').onclick=collectShift;
+document.getElementById('skipBtn').onclick=()=>{
+  if(!S.exped)return;const c=Math.max(1,Math.ceil((S.exped.end-now())/3600000*3));
+  if(S.procs<c){toast(`Needs ${c} processors.`);return;}
+  S.procs-=c;S.exped.end=now();render();};
+document.getElementById('fastBtn').onclick=()=>{S.offset+=3600000;render();};
+document.getElementById('crateBtn').onclick=()=>{
+  if(S.procs<4){toast('Needs 4 processors.');return;}
+  S.procs-=4;const it=rollItem(rng((Math.random()*0xffffffff)>>>0),Math.max(1,S.cleared||1));
+  S.inv.push(it);toast('Crate opened: '+it.name+'.');render();};
+document.getElementById('coolantBtn').onclick=()=>{
+  if(S.procs<2){toast('Needs 2 processors.');return;}
+  if(S.coolantUsed<=0){toast('Ration is already full.');return;}
+  S.procs-=2;S.coolantUsed--;toast('Coolant charge restored.');render();};
+
+/* --- boot ------------------------------------------------ */
+newGame('corpo_rat');
+S.dayKey=new Date(now()).toDateString();
+render();
+setInterval(render,30000);
+</script>
+</body>
+</html>
