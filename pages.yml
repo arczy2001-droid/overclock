@@ -1,0 +1,37 @@
+# Publishes ui/ to GitHub Pages. Static files only — Pages runs no Node process
+# and no database, so this deploys the LOCAL-MODE build. Leave ui/config.js
+# with an empty apiBase, or point it at an API hosted somewhere that runs
+# containers if you want server mode.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pages serves the site from a subpath (/<repo>/), so every asset
+      # reference in index.html must stay relative. There is nothing to build.
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ui
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -531,7 +531,9 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
 
 <div class="toast" id="toast"></div>
 
+<script src="config.js"></script>
 <script src="api.js"></script>
+<script src="local-backend.js"></script>
 <script>
 /* ----------------------------------------------------------
    Build stamp and staleness guard.
@@ -542,19 +544,26 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
    server, so "that name is already on file" and "I cannot sign in"
    are both true at once and neither points at the cause.
    ---------------------------------------------------------- */
-const BUILD = '1.0 · server-authoritative';
-document.getElementById('buildStamp').textContent = 'build ' + BUILD;
-console.info('%cOVERTIME.EXE ' + BUILD, 'color:#34D9F0;font-weight:bold');
-
-if (!window.API) {
+if (!window.NET) {
   const warn = document.getElementById('storageWarn');
   warn.hidden = false;
   warn.textContent =
-    'api.js did not load, so this page cannot reach the registry. You are viewing a '
-    + 'cached or stale copy. Hard-reload with Ctrl+Shift+R (Cmd+Shift+R on macOS) and '
-    + 'open it from http://localhost:8080 — not from a file:// path.';
+    'The scripts did not load, so this page cannot start. You are most likely viewing a '
+    + 'cached or stale copy. Hard-reload with Ctrl+Shift+R (Cmd+Shift+R on macOS).';
   document.getElementById('authSubmit').disabled = true;
-  throw new Error('api.js missing — stale page');
+  throw new Error('config.js / api.js / local-backend.js missing — stale page');
+}
+
+const BUILD = '1.1 · ' + (NET.mode === 'local' ? 'local device' : 'server-authoritative');
+document.getElementById('buildStamp').textContent = 'build ' + BUILD;
+console.info('%cOVERTIME.EXE ' + BUILD, 'color:#34D9F0;font-weight:bold');
+
+if (NET.mode === 'local' && NET.storageDurable === false) {
+  const warn = document.getElementById('storageWarn');
+  warn.hidden = false;
+  warn.textContent =
+    'Storage is unavailable in this frame, so accounts and progress live in memory only '
+    + 'and will not survive a reload. Open the page in its own browser tab.';
 }
 
 /* ==========================================================
@@ -1089,16 +1098,16 @@ document.addEventListener('click',ev=>{
 });
 document.getElementById('attackBtn').onclick=attack;
 document.getElementById('ventBtn').onclick=vent;
-document.getElementById('floorDown').onclick=()=>{if(S.floor>1)act(()=>API.setFloor(S.floor-1),{quiet:true});};
-document.getElementById('floorUp').onclick=()=>{if(S.floor<=S.cleared)act(()=>API.setFloor(S.floor+1),{quiet:true});};
+document.getElementById('floorDown').onclick=()=>{if(S.floor>1)act(()=>NET.setFloor(S.floor-1),{quiet:true});};
+document.getElementById('floorUp').onclick=()=>{if(S.floor<=S.cleared)act(()=>NET.setFloor(S.floor+1),{quiet:true});};
 document.getElementById('collectBtn').onclick=collectShift;
 document.getElementById('skipBtn').onclick=skipShift;
 // The prototype's "skip ahead" button is gone: the server owns the clock now,
 // and a client that could move it would be a client that prints currency.
 document.getElementById('fastBtn').remove();
-document.getElementById('crateBtn').onclick=()=>act(()=>API.buyCrate())
+document.getElementById('crateBtn').onclick=()=>act(()=>NET.buyCrate())
   .then(r=>{ if(r) toast('Crate opened: '+r.item.name+'.'); });
-document.getElementById('coolantBtn').onclick=()=>act(()=>API.buyCoolant())
+document.getElementById('coolantBtn').onclick=()=>act(()=>NET.buyCoolant())
   .then(r=>{ if(r) toast('Coolant charge restored.'); });
 
 /* ==========================================================
@@ -1129,7 +1138,7 @@ async function act(fn, opts = {}){
     if (res && res.state) S = fromServer(res.state);
     return res;
   } catch (err) {
-    if (err instanceof API.ApiError && err.status === 401) { toSignIn('Session expired. Sign in again.'); return null; }
+    if (err instanceof NET.ApiError && err.status === 401) { toSignIn('Session expired. Sign in again.'); return null; }
     toast(err.message || 'Action refused.');
     return null;
   } finally {
@@ -1219,9 +1228,13 @@ function renderAuth(){
   $('confirmField').hidden = !reg;
   $('authSubmit').textContent = reg ? 'Create account' : 'Sign in';
   $('authPass').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
-  $('authNote').textContent = reg
-    ? 'Your access code is hashed on the server with argon2id and never stored in readable form. We would not know it if we wanted to.'
-    : 'Accounts live on the registry server, so your character follows you to any device.';
+  $('authNote').textContent = NET.mode === 'server'
+    ? (reg
+        ? 'Your access code is hashed on the server with argon2id and never stored in readable form.'
+        : 'Accounts live on the registry server, so your character follows you to any device.')
+    : (reg
+        ? 'This build stores everything in this browser. Nothing is transmitted anywhere, and nothing follows you to another device or another browser.'
+        : 'Accounts are stored in this browser only. Clearing site data clears your character with it.');
 }
 
 function toSignIn(message){
@@ -1250,8 +1263,8 @@ async function submitAuth(){
   $('authSubmit').disabled = true;
   try {
     const res = authMode === 'register'
-      ? await API.register(username, password)
-      : await API.login(username, password);
+      ? await NET.register(username, password)
+      : await NET.login(username, password);
     $('authPass').value = ''; $('authPass2').value = '';
     ACCOUNT = res.account;
     if (res.next === 'game') await enterGame();
@@ -1272,7 +1285,7 @@ function enterIntake(){
 }
 
 async function enterGame(){
-  const res = await API.state();
+  const res = await NET.state();
   S = fromServer(res.state);
   showScreen('game');
   render();
@@ -1283,7 +1296,7 @@ async function startGame(){
   if (name.length < 2){ $('createErr').textContent = 'The paperwork needs a name of at least 2 characters.'; return; }
   $('startGame').disabled = true;
   try {
-    const res = await API.createCharacter(name, draft.gender, draft.classId);
+    const res = await NET.createCharacter(name, draft.gender, draft.classId);
     S = fromServer(res.state);
     showScreen('game');
     render();
@@ -1295,7 +1308,7 @@ async function startGame(){
 }
 
 async function logout(){
-  await API.logout().catch(() => {});
+  await NET.logout().catch(() => {});
   $('authUser').value = '';
   toSignIn();
 }
@@ -1304,7 +1317,7 @@ async function logout(){
 
 async function attack(){
   if (S.busy) return;
-  const res = await act(() => API.attack(), { quiet: true });
+  const res = await act(() => NET.attack(), { quiet: true });
   if (!res) return;
   // The server ran the same deterministic engine; we only replay its log.
   playLog(res.battle, res.battle.rewards && {
@@ -1319,12 +1332,12 @@ async function attack(){
    and a `const` would sit in the temporal dead zone at that point. That throws
    a ReferenceError which kills the rest of the script — including the handler
    that submits the sign-in form. Hoisting removes the ordering hazard. */
-function vent(){ return act(() => API.vent()); }
-function startShift(hours){ return act(() => API.startShift(hours)); }
-function skipShift(){ return act(() => API.skipShift()); }
+function vent(){ return act(() => NET.vent()); }
+function startShift(hours){ return act(() => NET.startShift(hours)); }
+function skipShift(){ return act(() => NET.skipShift()); }
 
 async function collectShift(){
-  const res = await act(() => API.collectShift());
+  const res = await act(() => NET.collectShift());
   if (!res) return;
   const r = res.report;
   $('report').innerHTML =
@@ -1359,13 +1372,13 @@ $('logoutBtn').onclick = logout;
 (async () => {
   renderAuth();
   try {
-    const me = await API.me();
+    const me = await NET.me();
     ACCOUNT = me.account;
     if (me.next === 'game'){ S = fromServer(me.state); showScreen('game'); render(); }
     else enterIntake();
   } catch (err) {
     // 401 is the ordinary "not signed in yet" case, not an error worth showing.
-    if (!(err instanceof API.ApiError) || err.status !== 401) {
+    if (!(err instanceof NET.ApiError) || err.status !== 401) {
       $('authErr').textContent = err.message;
     }
     showScreen('auth');

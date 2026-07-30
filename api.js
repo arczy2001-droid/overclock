@@ -5,13 +5,31 @@
    ========================================================== */
 
 window.API = (() => {
+  const BASE = (window.OVERTIME_CONFIG?.apiBase || '').replace(/\/$/, '');
+  /** True when the API lives on another origin, where cookies get blocked. */
+  const CROSS_ORIGIN = Boolean(BASE) && !BASE.startsWith(location.origin);
+  const TOKEN_KEY = 'overtime.token.v1';
+
+  const readToken = () => { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } };
+  const writeToken = (t) => { try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY); } catch {} };
+
   async function call(path, options = {}) {
+    const headers = {};
+    if (options.body) headers['Content-Type'] = 'application/json';
+    // Same-origin keeps the httpOnly cookie, which the page cannot read.
+    // Cross-origin falls back to a Bearer token because third-party cookies
+    // are blocked by default in Safari and increasingly elsewhere.
+    if (CROSS_ORIGIN) {
+      const token = readToken();
+      if (token) headers.Authorization = 'Bearer ' + token;
+    }
+
     let response;
     try {
-      response = await fetch(path, {
+      response = await fetch(BASE + path, {
         method: options.method || 'GET',
-        credentials: 'same-origin',
-        headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+        credentials: CROSS_ORIGIN ? 'omit' : 'same-origin',
+        headers,
         body: options.body ? JSON.stringify(options.body) : undefined,
       });
     } catch (err) {
@@ -45,14 +63,23 @@ window.API = (() => {
 
   const post = (path, body) => call(path, { method: 'POST', body });
 
+  /** Login and register hand back a token for the cross-origin case. */
+  const withToken = async (promise) => {
+    const res = await promise;
+    if (CROSS_ORIGIN && res?.token) writeToken(res.token);
+    return res;
+  };
+
   return {
     ApiError,
+    mode: 'server',
+    crossOrigin: CROSS_ORIGIN,
 
     /* --- session ------------------------------------------ */
     me:        ()                    => call('/api/me'),
-    register:  (username, password)  => post('/api/auth/register', { username, password }),
-    login:     (username, password)  => post('/api/auth/login',    { username, password }),
-    logout:    ()                    => post('/api/auth/logout'),
+    register:  (username, password)  => withToken(post('/api/auth/register', { username, password })),
+    login:     (username, password)  => withToken(post('/api/auth/login',    { username, password })),
+    logout:    ()                    => post('/api/auth/logout').finally(() => writeToken(null)),
 
     /* --- character ---------------------------------------- */
     content:   ()                    => call('/api/content'),
@@ -115,12 +142,15 @@ window.fromServer = function fromServer(state) {
     vehicle: state.overheat.vehicleTier,
     floor: state.progress.currentFloor,
     cleared: state.progress.highestFloorCleared,
+    dayKey: state.overheat.dayKey,
+    createdAt: state.createdAt,
     exped: state.expedition
       ? {
           h: state.expedition.durationHours,
           start: state.expedition.startedAt,
           end: state.expedition.endsAt,
           floor: state.expedition.floorSnapshot,
+          seed: state.expedition.seed,
         }
       : null,
     timezone: state.timezone,
