@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: overtime
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: overtime
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"          # drop this line once you stop needing psql from the host
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U overtime -d overtime"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DATABASE_URL: postgres://overtime:${POSTGRES_PASSWORD:-changeme}@db:5432/overtime
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080}
+    ports:
+      - "8080:8080"
+    # Migrations run on boot. Fine for a single instance; move to a one-shot
+    # job or an init container before you scale the API past one replica,
+    # or two of them will race to apply the same file.
+    command: sh -c "npm run migrate && npm start"
+
+volumes:
+  pgdata:

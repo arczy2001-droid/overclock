@@ -1,345 +1,175 @@
-import { BALANCE } from '../config/balance';
-import { CLASSES } from '../data/content';
-import type {
-  BattleResult,
-  Buff,
-  ClassId,
-  Combatant,
-  CombatEvent,
-  CombatEventType,
-  DerivedStats,
-  FloorDefinition,
-} from '../types';
-import { Rng } from './rng';
-import { clamp } from './stats';
+import { randomInt } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { BALANCE } from '../../../src/config/balance.js';
+import { runBattle } from '../../../src/systems/combat.js';
+import { getFloor, rollFloorRewards } from '../../../src/systems/floors.js';
+import { heatCost } from '../../../src/systems/overheat.js';
+import { deriveStats, grantXp } from '../../../src/systems/stats.js';
+import { requireCharacter } from '../auth.js';
+import { GameError, pool, tx, type Client } from '../db.js';
+import { insertItems, loadCharacter, saveCharacter } from '../mapper.js';
+import { dayKey } from '../time.js';
 
 /**
- * Pure, deterministic auto-battler.
+ * The floor attack. Everything the client used to decide, the server now
+ * decides: whether there is heat for it, what the enemy is, what the dice
+ * said, and what it paid.
  *
- * The player has zero input once `runBattle` is called: this function receives
- * a fully-resolved snapshot, plays the whole fight, and returns a log the UI
- * replays at whatever speed it likes. Same seed + same snapshot = same fight,
- * which is what lets an authoritative server re-run and verify a result.
+ * Order is deliberate. Heat is charged BEFORE the fight, inside the same
+ * transaction, so a loss still costs temperature — without that, floor choice
+ * carries no risk and the optimal play is to spam the deepest floor until it
+ * happens to work. If the handler throws, the transaction rolls back and the
+ * heat comes with it: there is no state where a player paid for a fight that
+ * never happened.
  */
 
-export interface BattleInput {
-  seed: number;
-  floor: FloorDefinition;
-  operator: {
-    id: string;
-    name: string;
-    classId: ClassId;
-    stats: DerivedStats;
-  };
-}
+const setFloorBody = z.object({ floor: z.number().int().min(1).max(10_000) });
 
-/* ------------------------------------------------------------------ */
-/* Setup                                                              */
-/* ------------------------------------------------------------------ */
-
-function makeCombatant(
-  id: string,
-  name: string,
-  side: Combatant['side'],
-  stats: DerivedStats,
-  classId?: ClassId,
-): Combatant {
-  return {
-    id,
-    name,
-    side,
-    classId,
-    hp: stats.maxHp,
-    stats: { ...stats },
-    charge: 0,
-    buffs: [],
-    runtime: { armorBypassedUntilRound: -1, lastDamageTaken: 0, lastAttackerId: null },
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Stat resolution with buffs                                         */
-/* ------------------------------------------------------------------ */
-
-function effectiveStats(unit: Combatant): DerivedStats {
-  const out = { ...unit.stats };
-  for (const buff of unit.buffs) {
-    out.dodge += buff.modifiers.dodgePct ?? 0;
-    out.armor += buff.modifiers.armor ?? 0;
-    out.critChance += buff.modifiers.critChancePct ?? 0;
-    out.attack *= 1 + (buff.modifiers.damagePct ?? 0);
-  }
-  out.dodge = clamp(out.dodge, 0, BALANCE.stats.dodgeCap);
-  out.critChance = clamp(out.critChance, 0, BALANCE.stats.critCap);
-  return out;
-}
-
-/* ------------------------------------------------------------------ */
-/* Engine                                                             */
-/* ------------------------------------------------------------------ */
-
-export function runBattle(input: BattleInput): BattleResult {
-  const rng = new Rng(input.seed);
-  const log: CombatEvent[] = [];
-  let round = 0;
-  let damageDealt = 0;
-  let damageTaken = 0;
-
-  const operator = makeCombatant(
-    input.operator.id,
-    input.operator.name,
-    'operator',
-    input.operator.stats,
-    input.operator.classId,
+/**
+ * Charges heat atomically. The day row is created on first use, so the
+ * midnight reset is not an event — tomorrow's row simply does not exist yet.
+ * Zero rows back means the combined value would exceed 100, which is refused
+ * outright rather than clamped: 98 heat with a 6-cost floor is a stop.
+ */
+async function spendHeat(
+  client: Client,
+  characterId: string,
+  key: string,
+  cost: number,
+): Promise<number> {
+  const { rows } = await client.query(
+    `INSERT INTO character_days AS d (character_id, day_key, heat, attacks)
+     VALUES ($1, $2, $3, 1)
+     ON CONFLICT (character_id, day_key) DO UPDATE
+        SET heat = d.heat + EXCLUDED.heat, attacks = d.attacks + 1
+      WHERE d.heat + EXCLUDED.heat <= $4
+     RETURNING heat`,
+    [characterId, key, cost, BALANCE.overheat.max],
   );
-  const hostile = makeCombatant('hostile', input.floor.enemyName, 'hostile', input.floor.stats);
-  const units = [operator, hostile];
+  if (!rows[0]) {
+    throw new GameError(409, 'Core temperature critical. Vent heat or wait for the 00:00 reset.', 'too_hot');
+  }
+  return Number(rows[0].heat);
+}
 
-  const snapshot = (): Record<string, number> => ({
-    [operator.id]: Math.max(0, Math.round(operator.hp)),
-    [hostile.id]: Math.max(0, Math.round(hostile.hp)),
+export default async function combatRoutes(app: FastifyInstance) {
+  /** Preview a floor without committing to it. Read-only, no heat. */
+  app.get('/api/floor/:n', async (request) => {
+    const session = requireCharacter(request);
+    const n = Number((request.params as { n: string }).n);
+    if (!Number.isInteger(n) || n < 1) throw new GameError(400, 'Bad floor number.', 'bad_floor');
+
+    const player = await loadCharacter(pool, session.characterId);
+    if (n > player.progress.highestFloorCleared + 1) {
+      throw new GameError(403, 'That floor is not unlocked yet.', 'locked_floor');
+    }
+    return { floor: getFloor(n), heatCost: heatCost(player, n) };
   });
 
-  const emit = (type: CombatEventType, text: string, extra: Partial<CombatEvent> = {}) => {
-    log.push({ round, type, text, hpSnapshot: snapshot(), ...extra });
-  };
-
-  emit(
-    'battle_start',
-    `FLOOR ${input.floor.floor} — ${input.floor.sector}. Hostile on file: ${hostile.name}.`,
-  );
-
-  /* --- damage pipeline ------------------------------------------- */
-
-  const dealDamage = (
-    attacker: Combatant,
-    defender: Combatant,
-    rawMultiplier: number,
-    label: string,
-    opts: { canDodge?: boolean; canCrit?: boolean; ignoreArmor?: boolean } = {},
-  ) => {
-    const { canDodge = true, canCrit = true, ignoreArmor = false } = opts;
-    const atk = effectiveStats(attacker);
-    const def = effectiveStats(defender);
-
-    if (canDodge && rng.chance(def.dodge)) {
-      defender.charge = clamp(defender.charge + BALANCE.charge.gainOnDodge, 0, BALANCE.charge.max);
-      emit('dodge', `${defender.name} is simply not there. ${label} hits municipal concrete.`, {
-        sourceId: attacker.id,
-        targetId: defender.id,
-      });
-      return 0;
-    }
-
-    const variance = rng.range(BALANCE.combat.varianceMin, BALANCE.combat.varianceMax);
-    const isCrit = canCrit && rng.chance(atk.critChance);
-    let raw = atk.attack * rawMultiplier * variance * (isCrit ? atk.critMultiplier : 1);
-
-    const armorIsOffline = ignoreArmor || defender.runtime.armorBypassedUntilRound >= round;
-    const armor = armorIsOffline ? 0 : def.armor;
-    const dealt = Math.max(raw * BALANCE.stats.minDamageThrough, raw - armor);
-    const final = Math.max(1, Math.round(dealt));
-
-    defender.hp -= final;
-    defender.runtime.lastDamageTaken = final;
-    defender.runtime.lastAttackerId = attacker.id;
-    defender.charge = clamp(defender.charge + BALANCE.charge.gainOnDamaged, 0, BALANCE.charge.max);
-
-    if (attacker.side === 'operator') damageDealt += final;
-    else damageTaken += final;
-
-    emit(isCrit ? 'crit' : 'attack', formatHit(attacker, defender, label, final, isCrit, armorIsOffline), {
-      sourceId: attacker.id,
-      targetId: defender.id,
-      amount: final,
+  app.post('/api/floor', async (request) => {
+    const session = requireCharacter(request);
+    const { floor } = setFloorBody.parse(request.body);
+    return tx(async (client) => {
+      const player = await loadCharacter(client, session.characterId, { forUpdate: true });
+      if (floor > player.progress.highestFloorCleared + 1) {
+        throw new GameError(403, 'That floor is not unlocked yet.', 'locked_floor');
+      }
+      player.progress.currentFloor = floor;
+      await saveCharacter(client, player);
+      return { state: await loadCharacter(client, session.characterId) };
     });
-
-    if (defender.hp <= 0) {
-      emit('death', `${defender.name} stops complying. Permanently.`, { targetId: defender.id });
-    }
-    return final;
-  };
-
-  /* --- ultimates --------------------------------------------------- */
-
-  const fireUltimate = (unit: Combatant, target: Combatant): { consumesTurn: boolean } => {
-    const cls = unit.classId ? CLASSES[unit.classId] : null;
-    if (!cls) return { consumesTurn: false };
-    unit.charge = 0;
-    emit('ultimate', `>> ${cls.ultimate.name.toUpperCase()} <<`, { sourceId: unit.id });
-
-    switch (cls.ultimate.id) {
-      /* Three precision strikes, then +30% evasion for 3 turns. */
-      case 'corporate_restructuring': {
-        for (let i = 0; i < 3 && target.hp > 0; i++) {
-          dealDamage(unit, target, 0.62, `restructuring pass ${i + 1}/3`, { canCrit: true });
-        }
-        applyBuff(unit, {
-          id: 'restructuring_evasion',
-          label: 'Plausible Deniability',
-          turns: 3,
-          modifiers: { dodgePct: 0.3 },
-        }, emit);
-        return { consumesTurn: true };
-      }
-
-      /* Weld the plating back on, and return 30% of the last hit to sender. */
-      case 'jury_rigged_armor': {
-        const stats = effectiveStats(unit);
-        const heal = Math.round(stats.armor * 4 + stats.maxHp * 0.08);
-        unit.hp = Math.min(stats.maxHp, unit.hp + heal);
-        emit('heal', `${unit.name} welds ${heal} HP of plating back on. It holds. Mostly.`, {
-          sourceId: unit.id,
-          amount: heal,
-        });
-
-        const reflect = Math.round(unit.runtime.lastDamageTaken * 0.3);
-        if (reflect > 0 && target.hp > 0) {
-          target.hp -= reflect;
-          damageDealt += reflect;
-          emit('reflect', `${reflect} damage returned to sender, postage due.`, {
-            sourceId: unit.id,
-            targetId: target.id,
-            amount: reflect,
-          });
-          if (target.hp <= 0) {
-            emit('death', `${target.name} is refunded out of existence.`, { targetId: target.id });
-          }
-        }
-        return { consumesTurn: false }; // still gets a normal attack this turn
-      }
-
-      /* Strip armor for a turn; delete anything under 10% HP. */
-      case 'format_c': {
-        target.runtime.armorBypassedUntilRound = round + 1;
-        emit('buff_applied', `${target.name}'s plating is unmounted. Filesystem exposed.`, {
-          targetId: target.id,
-        });
-
-        const threshold = target.stats.maxHp * 0.1;
-        if (target.hp > 0 && target.hp <= threshold) {
-          const overkill = Math.round(target.hp);
-          target.hp = 0;
-          damageDealt += overkill;
-          emit('execute', `rm -rf ${target.name}. No confirmation prompt.`, {
-            sourceId: unit.id,
-            targetId: target.id,
-            amount: overkill,
-          });
-          emit('death', `${target.name} is deleted. Recycle bin unavailable.`, { targetId: target.id });
-          return { consumesTurn: true };
-        }
-        return { consumesTurn: false };
-      }
-    }
-    return { consumesTurn: false };
-  };
-
-  /* --- turn order --------------------------------------------------- */
-
-  const order = [...units].sort((a, b) => {
-    const diff = effectiveStats(b).initiative - effectiveStats(a).initiative;
-    return diff !== 0 ? diff : rng.next() - 0.5;
   });
 
-  /* --- main loop ---------------------------------------------------- */
+  app.post('/api/attack', async (request) => {
+    const session = requireCharacter(request);
 
-  let outcome: BattleResult['outcome'] = 'throttled';
+    return tx(async (client) => {
+      // FOR UPDATE serialises concurrent attacks on one character. The WHERE
+      // guard in spendHeat is belt to this braces: the lock stops two tabs,
+      // the guard stops a logic bug in anything that forgets the lock.
+      const player = await loadCharacter(client, session.characterId, { forUpdate: true });
 
-  loop: for (round = 1; round <= BALANCE.combat.maxRounds; round++) {
-    emit('round_start', `— round ${round} —`);
+      const floorNumber = player.progress.currentFloor;
+      const floor = getFloor(floorNumber);
+      const cost = heatCost(player, floorNumber);
+      const key = dayKey(player.timezone);
+      const heatBefore = player.overheat.value;
 
-    for (const unit of order) {
-      if (unit.hp <= 0) continue;
-      const target = units.find((u) => u.id !== unit.id)!;
-      if (target.hp <= 0) break loop;
+      const heatAfter = await spendHeat(client, session.characterId, key, cost);
 
-      tickBuffs(unit, emit);
-
-      const gain = unit.side === 'operator' ? unit.stats.chargeRate : BALANCE.charge.enemyGainPerTurn;
-      unit.charge = clamp(unit.charge + gain, 0, BALANCE.charge.max);
-      emit('turn_start', `${unit.name} acts. [charge ${Math.round(unit.charge)}%]`, {
-        sourceId: unit.id,
+      // The seed is generated here and never accepted from the client. It is
+      // stored on the battle row, so any fight can be replayed months later to
+      // check the result — the engine is deterministic, which is what makes a
+      // ~100 byte audit trail sufficient instead of a 4KB log.
+      const seed = randomInt(0, 2 ** 31);
+      const stats = deriveStats(player);
+      const result = runBattle({
+        seed,
+        floor,
+        operator: { id: player.id, name: player.name, classId: player.classId, stats },
       });
 
-      let consumed = false;
-      if (unit.side === 'operator' && unit.charge >= BALANCE.charge.max) {
-        consumed = fireUltimate(unit, target).consumesTurn;
+      player.progress.totalRuns += 1;
+      let levelsGained = 0;
+      let advanced = false;
+
+      if (result.victory) {
+        const rewards = rollFloorRewards(seed, floor);
+        player.wallet.credits += rewards.credits;
+        player.wallet.processors += rewards.processors;
+        levelsGained = grantXp(player, rewards.xp).levelsGained;
+        player.progress.totalWins += 1;
+
+        if (floorNumber > player.progress.highestFloorCleared) {
+          player.progress.highestFloorCleared = floorNumber;
+          player.progress.currentFloor = floorNumber + 1;
+          advanced = true;
+        }
+
+        const stored = await insertItems(client, session.characterId, rewards.items, 'floor');
+        result.rewards = { ...rewards, items: stored };
+
+        await client.query(
+          `UPDATE character_days
+              SET wins = wins + 1, credits_earned = credits_earned + $3
+            WHERE character_id = $1 AND day_key = $2`,
+          [session.characterId, key, rewards.credits],
+        );
       }
-      if (target.hp <= 0) break loop;
 
-      if (!consumed) {
-        dealDamage(unit, target, 1, 'strike');
-      }
-      if (target.hp <= 0) break loop;
-    }
-  }
+      await saveCharacter(client, player);
 
-  if (operator.hp <= 0) outcome = 'operator_down';
-  else if (hostile.hp <= 0) outcome = 'hostile_down';
+      await client.query(
+        `INSERT INTO battles (character_id, floor, seed, victory, outcome, rounds,
+                              heat_before, heat_cost, stat_snapshot)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [
+          session.characterId,
+          floorNumber,
+          seed,
+          result.victory,
+          result.outcome,
+          result.rounds,
+          heatBefore,
+          cost,
+          JSON.stringify(stats),
+        ],
+      );
 
-  const victory = outcome === 'hostile_down';
-  emit(
-    'battle_end',
-    victory
-      ? `Floor ${input.floor.floor} cleared. Paperwork filed automatically.`
-      : outcome === 'throttled'
-        ? 'Thermal throttle. The fight is called on a technicality. You lose.'
-        : 'Operator offline. Respawn fee deducted from nothing.',
-  );
-
-  return {
-    seed: input.seed,
-    floor: input.floor.floor,
-    victory,
-    rounds: Math.min(round, BALANCE.combat.maxRounds),
-    outcome,
-    log,
-    damageDealt,
-    damageTaken,
-    rewards: null, // filled in by the progression layer, which owns the economy
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/* Buff helpers                                                       */
-/* ------------------------------------------------------------------ */
-
-type Emit = (type: CombatEventType, text: string, extra?: Partial<CombatEvent>) => void;
-
-function applyBuff(unit: Combatant, buff: Buff, emit: Emit): void {
-  const existing = unit.buffs.find((b) => b.id === buff.id);
-  if (existing) existing.turns = Math.max(existing.turns, buff.turns);
-  else unit.buffs.push({ ...buff });
-  emit('buff_applied', `${unit.name}: ${buff.label} (${buff.turns} turns).`, { targetId: unit.id });
-}
-
-function tickBuffs(unit: Combatant, emit: Emit): void {
-  for (const buff of [...unit.buffs]) {
-    buff.turns -= 1;
-    if (buff.turns <= 0) {
-      unit.buffs = unit.buffs.filter((b) => b !== buff);
-      emit('buff_expired', `${unit.name}: ${buff.label} lapsed.`, { targetId: unit.id });
-    }
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/* Log copy                                                           */
-/* ------------------------------------------------------------------ */
-
-function formatHit(
-  attacker: Combatant,
-  defender: Combatant,
-  label: string,
-  amount: number,
-  isCrit: boolean,
-  armorOffline: boolean,
-): string {
-  const head = `${attacker.name} → ${defender.name}`;
-  const suffix = [
-    isCrit ? 'CRIT' : null,
-    armorOffline ? 'armor offline' : null,
-  ].filter(Boolean).join(', ');
-  return `${head}: ${label} for ${amount}${suffix ? ` (${suffix})` : ''}.`;
+      return {
+        state: await loadCharacter(client, session.characterId),
+        battle: {
+          victory: result.victory,
+          outcome: result.outcome,
+          rounds: result.rounds,
+          log: result.log,
+          rewards: result.rewards,
+          levelsGained,
+          advanced,
+          heat: heatAfter,
+        },
+      };
+    });
+  });
 }
