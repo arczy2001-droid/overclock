@@ -530,9 +530,10 @@ button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--cyan);outl
 
 <div class="toast" id="toast"></div>
 
+<script src="api.js"></script>
 <script>
 /* ==========================================================
-   Prototype runtime. This mirrors src/ closely enough to play
+   Client runtime. This mirrors src/ closely enough to play
    with; the TypeScript modules are the real implementation.
    No storage APIs: state lives in memory for the session.
    ========================================================== */
@@ -747,14 +748,11 @@ function heatCost(n){
   const raw=clamp(B.heat.base*(1+steps*B.heat.perStep),B.heat.min,B.heat.cap)*(1-coolingPct());
   return Math.max(B.heat.min,Math.round(raw*10)/10);
 }
-function now(){return Date.now()+S.offset;}
+function now(){return Date.now();}
 function msToMidnight(){const d=new Date(now());const n=new Date(d);n.setHours(24,0,0,0);return n-d;}
-function checkDayRollover(){
-  const d=new Date(now()).toDateString();
-  if(S.dayKey!==d){S.dayKey=d;S.heat=0;S.coolantUsed=0;}
-}
 
-/* --- combat ---------------------------------------------- */
+/* --- combat (kept for offline replay of a server log; the server
+   runs the authoritative copy of this same function) ------- */
 function runBattle(seed,floor,opStats){
   const r=rng(seed),log=[];let round=0,dealt=0,taken=0;
   const c=CLASSES[S.classId];
@@ -842,29 +840,8 @@ function runBattle(seed,floor,opStats){
 }
 
 /* --- actions --------------------------------------------- */
-function attack(){
-  checkDayRollover();
-  const cost=heatCost(S.floor);
-  if(S.heat+cost>B.heat.max){toast('Core temperature critical. Vent heat or wait for 00:00.');return;}
-  if(S.busy)return;
-  S.heat=clamp(S.heat+cost,0,B.heat.max);
-  const seed=(Math.random()*0xffffffff)>>>0;
-  const f=getFloor(S.floor);
-  const res=runBattle(seed,f,derive());
-  let payout=null;
-  if(res.victory){
-    const r=rng(seed^0x9e3779b9);
-    payout={credits:Math.round(f.rw.credits*(.9+r()*.25)),
-      procs:r()<f.rw.proc?(f.boss?1+Math.floor(r()*3):1):0,xp:f.rw.xp,items:[]};
-    if(r()<f.rw.item)payout.items.push(rollItem(r,f.floor,f.boss?'licensed':undefined));
-    S.credits+=payout.credits;S.procs+=payout.procs;S.inv.push(...payout.items);
-    payout.levels=grantXp(payout.xp);
-    if(S.floor>S.cleared){S.cleared=S.floor;S.floor++;}
-  }
-  playLog(res,payout);
-}
 
-function playLog(res,payout){
+function playLog(res,payout){ // res.log came from the server
   const el=document.getElementById('log');el.innerHTML='';
   const pay=document.getElementById('payout');pay.hidden=true;
   S.busy=true;render();
@@ -903,46 +880,11 @@ function updateBars(h){
   document.getElementById('fChargeWrap').classList.toggle('full',c>=100);
 }
 
-function vent(){
-  checkDayRollover();
-  const left=B.heat.coolantCharges-S.coolantUsed;
-  if(left<=0){toast('Daily coolant ration spent. Requisition resets at 00:00.');return;}
-  if(S.heat<=0){toast('Already cold.');return;}
-  S.heat=clamp(S.heat-B.heat.coolantCut,0,100);S.coolantUsed++;render();
-}
 
-function startShift(h){
-  if(S.exped){toast('Already on guard duty. One shift at a time.');return;}
-  S.exped={h,start:now(),end:now()+h*3600000,floor:Math.max(1,S.cleared),seed:(Math.random()*0xffffffff)>>>0};
-  render();
-}
 function shiftRates(floor,h){
   const e=B.exped,b=e.bonus[h]||1;
   return {cr:Math.round(e.crHour*(1+floor*e.crFloor)*b),xp:Math.round(e.xpHour*(1+floor*e.xpFloor)*b),
     proc:e.procHour+floor*e.procFloor,items:e.itemHour};
-}
-function collectShift(){
-  if(!S.exped||now()<S.exped.end){toast('Shift still running.');return;}
-  const e=S.exped,r=rng(e.seed),rt=shiftRates(e.floor,e.h);
-  const credits=Math.round(rt.cr*e.h*(.94+r()*.16));let procs=0;
-  for(let i=0;i<e.h;i++)if(r()<rt.proc)procs++;
-  const items=[];let rolls=rt.items*e.h;
-  while(rolls>0){if(r()<Math.min(1,rolls))items.push(rollItem(r,Math.max(1,e.floor+B.exped.ilvlOffset)));rolls--;}
-  const xp=Math.round(rt.xp*e.h);
-  S.credits+=credits;S.procs+=procs;S.inv.push(...items);const lv=grantXp(xp);
-  const inc=[INCIDENTS[Math.floor(r()*INCIDENTS.length)]];
-  if(e.h>=4)inc.push(INCIDENTS[Math.floor(r()*INCIDENTS.length)]);
-  if(e.h>=8)inc.push(INCIDENTS[Math.floor(r()*INCIDENTS.length)]);
-  S.exped=null;
-  document.getElementById('report').innerHTML=
-    `<div class="payout" style="border:none;margin:0;padding:0">
-      <div><b style="color:var(--amber)">+${fmt(credits)}</b> credits</div>
-      ${procs?`<div><b style="color:var(--violet)">+${procs}</b> processors</div>`:''}
-      <div><b style="color:var(--cyan)">+${fmt(xp)}</b> xp</div>
-      ${items.length?`<div><b style="color:var(--ok)">+${items.length}</b> items</div>`:''}
-      ${lv?`<div><b>LV +${lv}</b></div>`:''}
-    </div>`+[...new Set(inc)].map(t=>`<p class="incident">${t}</p>`).join('');
-  render();
 }
 
 function toast(msg){
@@ -975,8 +917,6 @@ function itemCard(it,equipped){
 }
 function render(){
   if(!S)return;
-  checkDayRollover();
-  queueSave();
   const d=derive(),a=attributes(),c=CLASSES[S.classId];
   document.documentElement.style.setProperty('--heat',(S.heat/100).toFixed(3));
 
@@ -1124,100 +1064,52 @@ document.addEventListener('click',ev=>{
 });
 document.getElementById('attackBtn').onclick=attack;
 document.getElementById('ventBtn').onclick=vent;
-document.getElementById('floorDown').onclick=()=>{if(S.floor>1){S.floor--;render();}};
-document.getElementById('floorUp').onclick=()=>{if(S.floor<=S.cleared){S.floor++;render();}};
+document.getElementById('floorDown').onclick=()=>{if(S.floor>1)act(()=>API.setFloor(S.floor-1),{quiet:true});};
+document.getElementById('floorUp').onclick=()=>{if(S.floor<=S.cleared)act(()=>API.setFloor(S.floor+1),{quiet:true});};
 document.getElementById('collectBtn').onclick=collectShift;
-document.getElementById('skipBtn').onclick=()=>{
-  if(!S.exped)return;const c=Math.max(1,Math.ceil((S.exped.end-now())/3600000*3));
-  if(S.procs<c){toast(`Needs ${c} processors.`);return;}
-  S.procs-=c;S.exped.end=now();render();};
-document.getElementById('fastBtn').onclick=()=>{S.offset+=3600000;render();};
-document.getElementById('crateBtn').onclick=()=>{
-  if(S.procs<4){toast('Needs 4 processors.');return;}
-  S.procs-=4;const it=rollItem(rng((Math.random()*0xffffffff)>>>0),Math.max(1,S.cleared||1));
-  S.inv.push(it);toast('Crate opened: '+it.name+'.');render();};
-document.getElementById('coolantBtn').onclick=()=>{
-  if(S.procs<2){toast('Needs 2 processors.');return;}
-  if(S.coolantUsed<=0){toast('Ration is already full.');return;}
-  S.procs-=2;S.coolantUsed--;toast('Coolant charge restored.');render();};
+document.getElementById('skipBtn').onclick=skipShift;
+// The prototype's "skip ahead" button is gone: the server owns the clock now,
+// and a client that could move it would be a client that prints currency.
+document.getElementById('fastBtn').remove();
+document.getElementById('crateBtn').onclick=()=>act(()=>API.buyCrate())
+  .then(r=>{ if(r) toast('Crate opened: '+r.item.name+'.'); });
+document.getElementById('coolantBtn').onclick=()=>act(()=>API.buyCoolant())
+  .then(r=>{ if(r) toast('Coolant charge restored.'); });
 
 /* ==========================================================
-   ACCOUNTS · SESSION · SCREEN ROUTER
+   SESSION · SCREEN ROUTER · SERVER ACTIONS
+
+   The client no longer owns any rule. Every mutating action is a
+   request; the reply carries the authoritative state, which replaces
+   S wholesale. The local engine survives only to RENDER — derived
+   stats, heat costs, floor briefings — so the numbers on screen match
+   what the server just computed, and diverge visibly if they ever stop.
    ========================================================== */
 
-/* Storage adapter. localStorage is the real backing store, but it throws in
-   sandboxed frames and in Safari private mode, so every call is guarded and
-   falls back to an in-memory map. The game never notices the difference; only
-   the persistence warning on the sign-in panel does. */
-const Store = (() => {
-  const mem = Object.create(null);
-  let live = false;
-  try {
-    const probe = '__overtime_probe__';
-    window.localStorage.setItem(probe, '1');
-    window.localStorage.removeItem(probe);
-    live = true;
-  } catch (e) { live = false; }
-  return {
-    live,
-    get(k){ try { return live ? localStorage.getItem(k) : (k in mem ? mem[k] : null); }
-            catch(e){ return k in mem ? mem[k] : null; } },
-    set(k,v){ try { if(live) localStorage.setItem(k,v); else mem[k]=v; } catch(e){ mem[k]=v; } },
-    del(k){ try { if(live) localStorage.removeItem(k); else delete mem[k]; } catch(e){ delete mem[k]; } }
-  };
-})();
+const $ = id => document.getElementById(id);
+let ACCOUNT = null;
 
-const K_ACCOUNTS = 'overtime.accounts.v1';
-const K_SESSION  = 'overtime.session.v1';
-
-let ACCOUNTS = {};
-let SESSION = null;
-
-function loadAccounts(){
-  try { ACCOUNTS = JSON.parse(Store.get(K_ACCOUNTS) || '{}') || {}; }
-  catch(e){ ACCOUNTS = {}; }
-}
-function writeAccounts(){ Store.set(K_ACCOUNTS, JSON.stringify(ACCOUNTS)); }
-
-/* Password handling. This is obfuscation, not security: anything that runs in
-   the browser can be read by whoever owns the browser. Salted SHA-256 keeps a
-   reused password from sitting in plain text in someone's devtools, and that is
-   the entire claim being made. Real accounts need a server. */
-async function hashPass(pw, salt){
-  const input = salt + '|' + pw;
-  if (window.crypto && crypto.subtle) {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
-    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
-  }
-  let h = 2166136261;                       // FNV-1a, insecure contexts only
-  for (let i = 0; i < input.length; i++){ h ^= input.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return 'fnv1a$' + (h >>> 0).toString(16);
-}
-function makeSalt(){
-  const a = new Uint8Array(12);
-  if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
-  else for (let i=0;i<a.length;i++) a[i] = Math.floor(Math.random()*256);
-  return [...a].map(b => b.toString(16).padStart(2,'0')).join('');
-}
-
-/* --- save / load ------------------------------------------ */
-let saveTimer = null;
-function queueSave(){ clearTimeout(saveTimer); saveTimer = setTimeout(persist, 400); }
-function persist(){
-  if (!SESSION || !S) return;
-  const acc = ACCOUNTS[SESSION];
-  if (!acc) return;
-  acc.character = S;
-  acc.lastSeenAt = Date.now();
-  writeAccounts();
-}
-window.addEventListener('beforeunload', persist);
-
-/* --- screens ---------------------------------------------- */
 function showScreen(name){
   ['auth','create','game'].forEach(n =>
-    document.getElementById('screen-'+n).classList.toggle('active', n === name));
+    $('screen-'+n).classList.toggle('active', n === name));
   window.scrollTo(0,0);
+}
+
+/** Every action funnels through here so failures surface consistently
+    instead of each handler inventing its own error path. */
+async function act(fn, opts = {}){
+  if (S) { S.busy = true; if (!opts.quiet) render(); }
+  try {
+    const res = await fn();
+    if (res && res.state) S = fromServer(res.state);
+    return res;
+  } catch (err) {
+    if (err instanceof API.ApiError && err.status === 401) { toSignIn('Session expired. Sign in again.'); return null; }
+    toast(err.message || 'Action refused.');
+    return null;
+  } finally {
+    if (S) { S.busy = false; render(); }
+  }
 }
 
 /* --- avatar: a personnel-file photograph ------------------- */
@@ -1225,9 +1117,7 @@ const CLASS_COLOR = { corpo_rat:'var(--cyan)', scavenger:'var(--amber)', hacker:
 function avatar(gender, classId, ring){
   const col = CLASS_COLOR[classId] || 'var(--dim)';
   const female = gender === 'female';
-  const head = female
-    ? '<circle cx="22" cy="18" r="7.2"/>'
-    : '<circle cx="22" cy="17.5" r="8"/>';
+  const head = female ? '<circle cx="22" cy="18" r="7.2"/>' : '<circle cx="22" cy="17.5" r="8"/>';
   const hair = female
     ? '<path d="M13 21c-1.1-9.4 3.6-13.6 9-13.6S32.1 11.6 31 21l-2.7-.6c.4-4.3-1.4-6.7-6.3-6.7s-6.7 2.4-6.3 6.7z"/>'
       + '<rect x="12" y="16" width="3.1" height="13" rx="1.55"/><rect x="28.9" y="16" width="3.1" height="13" rx="1.55"/>'
@@ -1236,7 +1126,6 @@ function avatar(gender, classId, ring){
     ? '<path d="M8.5 44c0-8.4 6.2-12.9 13.5-12.9S35.5 35.6 35.5 44z"/>'
     : '<path d="M5.5 44c0-9 7.4-13.7 16.5-13.7S38.5 35 38.5 44z"/>';
   return '<svg viewBox="0 0 44 44" role="img" aria-label="' + (female?'Female':'Male') + ' operator">'
-    + '<rect width="44" height="44" fill="none"/>'
     + '<g fill="' + col + '" opacity=".9">' + hair + head + body + '</g>'
     + (ring ? '<rect x="1" y="1" width="42" height="42" fill="none" stroke="' + col + '" stroke-width="1.5"/>' : '')
     + '</svg>';
@@ -1267,7 +1156,7 @@ function renderCreate(){
       + (g === 'male' ? 'Male' : 'Female') + '</span>';
   });
 
-  document.getElementById('classPick').innerHTML = Object.keys(CLASSES).map(id => {
+  $('classPick').innerHTML = Object.keys(CLASSES).map(id => {
     const c = CLASSES[id], sel = id === draft.classId;
     return '<button class="classcard" data-ui="class" data-class="' + id + '" aria-pressed="' + sel + '"'
       + ' style="border-left-color:' + (sel ? CLASS_COLOR[id] : 'var(--rule)') + '">'
@@ -1277,7 +1166,7 @@ function renderCreate(){
   }).join('');
 
   const c = CLASSES[draft.classId], p = previewStats(draft.classId), a = c.base;
-  document.getElementById('classPreview').innerHTML =
+  $('classPreview').innerHTML =
     '<h3 style="font-family:var(--display);font-size:22px;color:' + CLASS_COLOR[draft.classId] + '">' + c.name + '</h3>'
     + '<p class="formnote" style="margin:2px 0 12px">' + c.role
       + ' · health ×' + c.hpMult.toFixed(2) + ' · damage ×' + c.atkMult.toFixed(2) + '</p>'
@@ -1297,7 +1186,6 @@ function renderCreate(){
 
 /* --- auth panel ------------------------------------------- */
 let authMode = 'login';
-const $ = id => document.getElementById(id);
 
 function renderAuth(){
   const reg = authMode === 'register';
@@ -1306,85 +1194,123 @@ function renderAuth(){
   $('confirmField').hidden = !reg;
   $('authSubmit').textContent = reg ? 'Create account' : 'Sign in';
   $('authPass').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
-  $('authErr').textContent = '';
-  const n = Object.keys(ACCOUNTS).length;
   $('authNote').textContent = reg
-    ? 'Accounts are stored on this device only. Nothing is transmitted anywhere, which is the most privacy this city has offered in decades.'
-    : (n ? n + ' account' + (n>1?'s':'') + ' on file for this device.' : 'No accounts on file. Register to begin.');
-  if (!Store.live){
-    const w = $('storageWarn');
-    w.hidden = false;
-    w.textContent = 'Storage is unavailable in this frame, so accounts and progress live in memory only and will not survive a reload. Open the file directly in a browser tab for persistence.';
-  }
+    ? 'Your access code is hashed on the server with argon2id and never stored in readable form. We would not know it if we wanted to.'
+    : 'Accounts live on the registry server, so your character follows you to any device.';
+}
+
+function toSignIn(message){
+  ACCOUNT = null; S = null;
+  authMode = 'login';
+  $('authPass').value = ''; $('authPass2').value = '';
+  renderAuth();
+  $('authErr').textContent = message || '';
+  showScreen('auth');
 }
 
 async function submitAuth(){
-  const user = $('authUser').value.trim();
-  const pass = $('authPass').value;
-  const err = m => { $('authErr').textContent = m; };
-  if (user.length < 3) return err('Registered name needs at least 3 characters.');
-  if (pass.length < 6) return err('Access code needs at least 6 characters.');
-  const key = user.toLowerCase();
+  const username = $('authUser').value.trim();
+  const password = $('authPass').value;
+  const fail = m => { $('authErr').textContent = m; $('authSubmit').disabled = false; };
 
-  if (authMode === 'register'){
-    if (ACCOUNTS[key]) return err('That name is already on file. Sign in instead.');
-    if (pass !== $('authPass2').value) return err('The two access codes do not match.');
-    const salt = makeSalt();
-    ACCOUNTS[key] = { username:user, salt, hash: await hashPass(pass, salt),
-                      createdAt: Date.now(), lastSeenAt: Date.now(), character: null };
-    writeAccounts();
-  } else {
-    const acc = ACCOUNTS[key];
-    if (!acc) return err('No account under that name on this device.');
-    if (await hashPass(pass, acc.salt) !== acc.hash) return err('Access code rejected.');
+  // Cheap local checks first — no point spending a round trip and one of the
+  // ten rate-limited attempts on a password that is obviously too short.
+  if (username.length < 3) return fail('Registered name needs at least 3 characters.');
+  if (password.length < 6) return fail('Access code needs at least 6 characters.');
+  if (authMode === 'register' && password !== $('authPass2').value) {
+    return fail('The two access codes do not match.');
   }
 
-  SESSION = key;
-  Store.set(K_SESSION, key);
-  $('authPass').value = ''; $('authPass2').value = '';
-  enterAccount();
-}
-
-/* Route by what the account actually has, so a half-finished intake resumes
-   at the intake form rather than dropping someone into an empty dashboard. */
-function enterAccount(){
-  const acc = ACCOUNTS[SESSION];
-  if (!acc) { logout(); return; }
-  if (acc.character){
-    S = acc.character;
-    if (!S.gender) S.gender = 'male';        // migrate pre-intake saves
-    S.busy = false;
-    S.offset = 0;
-    showScreen('game');
-    render();
-  } else {
-    draft = { gender:'male', classId:'corpo_rat' };
-    $('charName').value = acc.username;
-    $('createErr').textContent = '';
-    renderCreate();
-    showScreen('create');
+  $('authErr').textContent = '';
+  $('authSubmit').disabled = true;
+  try {
+    const res = authMode === 'register'
+      ? await API.register(username, password)
+      : await API.login(username, password);
+    $('authPass').value = ''; $('authPass2').value = '';
+    ACCOUNT = res.account;
+    if (res.next === 'game') await enterGame();
+    else enterIntake();
+  } catch (err) {
+    fail(err.message);
+    return;
   }
+  $('authSubmit').disabled = false;
 }
 
-function startGame(){
-  const name = $('charName').value.trim();
-  if (name.length < 2){ $('createErr').textContent = 'The paperwork needs a name of at least 2 characters.'; return; }
-  newGame(name, draft.gender, draft.classId);
-  persist();
+function enterIntake(){
+  draft = { gender:'male', classId:'corpo_rat' };
+  $('charName').value = ACCOUNT ? ACCOUNT.username : '';
+  $('createErr').textContent = '';
+  renderCreate();
+  showScreen('create');
+}
+
+async function enterGame(){
+  const res = await API.state();
+  S = fromServer(res.state);
   showScreen('game');
   render();
-  toast('Welcome to the payroll, ' + name + '. Your first shift started nine minutes ago.');
 }
 
-function logout(){
-  persist();
-  SESSION = null;
-  S = null;
-  Store.del(K_SESSION);
-  authMode = 'login';
-  $('authUser').value = ''; $('authPass').value = '';
-  renderAuth();
-  showScreen('auth');
+async function startGame(){
+  const name = $('charName').value.trim();
+  if (name.length < 2){ $('createErr').textContent = 'The paperwork needs a name of at least 2 characters.'; return; }
+  $('startGame').disabled = true;
+  try {
+    const res = await API.createCharacter(name, draft.gender, draft.classId);
+    S = fromServer(res.state);
+    showScreen('game');
+    render();
+    toast('Welcome to the payroll, ' + name + '. Your first shift started nine minutes ago.');
+  } catch (err) {
+    $('createErr').textContent = err.message;
+  }
+  $('startGame').disabled = false;
+}
+
+async function logout(){
+  await API.logout().catch(() => {});
+  $('authUser').value = '';
+  toSignIn();
+}
+
+/* --- game actions ----------------------------------------- */
+
+async function attack(){
+  if (S.busy) return;
+  const res = await act(() => API.attack(), { quiet: true });
+  if (!res) return;
+  // The server ran the same deterministic engine; we only replay its log.
+  playLog(res.battle, res.battle.rewards && {
+    ...res.battle.rewards,
+    procs: res.battle.rewards.processors,
+    levels: res.battle.levelsGained,
+  });
+}
+
+/* Function declarations, not const arrows, on purpose: the wiring block for
+   the dashboard controls runs earlier in this script than these definitions,
+   and a `const` would sit in the temporal dead zone at that point. That throws
+   a ReferenceError which kills the rest of the script — including the handler
+   that submits the sign-in form. Hoisting removes the ordering hazard. */
+function vent(){ return act(() => API.vent()); }
+function startShift(hours){ return act(() => API.startShift(hours)); }
+function skipShift(){ return act(() => API.skipShift()); }
+
+async function collectShift(){
+  const res = await act(() => API.collectShift());
+  if (!res) return;
+  const r = res.report;
+  $('report').innerHTML =
+    '<div class="payout" style="border:none;margin:0;padding:0">'
+    + '<div><b style="color:var(--amber)">+' + fmt(r.credits) + '</b> credits</div>'
+    + (r.processors ? '<div><b style="color:var(--violet)">+' + r.processors + '</b> processors</div>' : '')
+    + '<div><b style="color:var(--cyan)">+' + fmt(r.xp) + '</b> xp</div>'
+    + (r.items.length ? '<div><b style="color:var(--ok)">+' + r.items.length + '</b> items</div>' : '')
+    + (r.levelsGained ? '<div><b>LV +' + r.levelsGained + '</b></div>' : '')
+    + '</div>'
+    + r.incidents.map(t => '<p class="incident">' + t + '</p>').join('');
 }
 
 /* --- wiring ----------------------------------------------- */
@@ -1392,7 +1318,7 @@ document.addEventListener('click', ev => {
   const t = ev.target.closest('[data-ui]');
   if (!t) return;
   const kind = t.dataset.ui;
-  if (kind === 'mode'){ authMode = t.dataset.mode; renderAuth(); }
+  if (kind === 'mode'){ authMode = t.dataset.mode; $('authErr').textContent = ''; renderAuth(); }
   else if (kind === 'gender'){ draft.gender = t.dataset.gender; renderCreate(); }
   else if (kind === 'class'){ draft.classId = t.dataset.class; renderCreate(); }
 });
@@ -1405,10 +1331,24 @@ $('startGame').onclick = startGame;
 $('logoutBtn').onclick = logout;
 
 /* --- boot ------------------------------------------------- */
-loadAccounts();
-SESSION = Store.get(K_SESSION);
-if (SESSION && ACCOUNTS[SESSION]) enterAccount();
-else { SESSION = null; Store.del(K_SESSION); renderAuth(); showScreen('auth'); }
+(async () => {
+  renderAuth();
+  try {
+    const me = await API.me();
+    ACCOUNT = me.account;
+    if (me.next === 'game'){ S = fromServer(me.state); showScreen('game'); render(); }
+    else enterIntake();
+  } catch (err) {
+    // 401 is the ordinary "not signed in yet" case, not an error worth showing.
+    if (!(err instanceof API.ApiError) || err.status !== 401) {
+      $('authErr').textContent = err.message;
+    }
+    showScreen('auth');
+  }
+})();
+
+// Keeps the midnight countdown and the shift timer honest without polling the
+// server. Any number that could have changed arrives with the next action.
 setInterval(() => { if (S) render(); }, 30000);
 </script>
 </body>
